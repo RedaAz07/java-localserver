@@ -7,7 +7,7 @@ import java.util.Map;
 
 public class ResponseBuilder {
 
-    public static CgiExecutor cgiExecutor;
+        public static CgiExecutor cgiExecutor;
 
     public static HttpResponse build(HttpRequest request, RouteConfig route) {
         System.out.println("Building response for: " + request);
@@ -56,7 +56,7 @@ public class ResponseBuilder {
         }
 
         // This just proves ProcessBuilder + stdout-as-response-body works end to end.
-        if (targetFile.getName().endsWith(".py")) {
+        if (isCgiRequest(route, targetFile)) {
             try {
                 return cgiExecutor.handle(targetFile);
             } catch (Exception e) {
@@ -73,6 +73,22 @@ public class ResponseBuilder {
         }
 
         return handleGet(route, targetFile, relativePath);
+    }
+
+    private static boolean isCgiRequest(RouteConfig route, File targetFile) {
+        if (route.getCgiExtensions() == null || route.getCgiExtensions().isEmpty()) {
+            return false;
+        }
+        if (!targetFile.isFile()) {
+            return false;
+        }
+        String name = targetFile.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot == -1) {
+            return false;
+        }
+        String ext = name.substring(dot);
+        return route.getCgiExtensions().contains(ext);
     }
 
     private static HttpResponse handleGet(RouteConfig route, File targetFile, String relativePath) {
