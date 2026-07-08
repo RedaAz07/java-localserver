@@ -1,12 +1,16 @@
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import utils.HttpRequest;
 import utils.HttpResponse;
 
 public class CGIHandler {
+
+    private static final long TIMEOUT_SECONDS = 10;
 
     public static HttpResponse handle(HttpRequest request, File scriptFile, String scriptPath, String queryString)
             throws Exception {
@@ -17,9 +21,6 @@ public class CGIHandler {
         env.put("SERVER_PROTOCOL", request.getVersion() != null ? request.getVersion() : "HTTP/1.1");
         env.put("REQUEST_METHOD", request.getMethod() != null ? request.getMethod() : "");
         env.put("SCRIPT_NAME", scriptPath);
-        // PATH_INFO: this project's convention is the script's full absolute
-        // path on disk, so a script can always locate itself regardless of
-        // the process's working directory.
         env.put("PATH_INFO", scriptFile.getAbsolutePath());
         env.put("QUERY_STRING", queryString != null ? queryString : "");
 
@@ -36,26 +37,54 @@ public class CGIHandler {
             env.put(key, header.getValue());
         }
 
-        Process process = builder.start();
+        Process process = null;
+        try {
+            process = builder.start();
 
-        try (OutputStream stdin = process.getOutputStream()) {
-            if (body != null && body.length > 0) {
-                stdin.write(body);
+            try (OutputStream stdin = process.getOutputStream()) {
+                if (body != null && body.length > 0) {
+                    stdin.write(body);
+                }
+                stdin.flush();
             }
-            stdin.flush();
+
+            InputStream in = process.getInputStream();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+            }
+
+            InputStream errIn = process.getErrorStream();
+            ByteArrayOutputStream errOut = new ByteArrayOutputStream();
+            while ((n = errIn.read(buf)) != -1) {
+                errOut.write(buf, 0, n);
+            }
+
+            boolean finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new IOException(
+                        "CGI script timed out after " + TIMEOUT_SECONDS + "s: " + scriptFile.getPath());
+            }
+
+            int exitCode = process.exitValue();
+            if (exitCode != 0) {
+                System.err.println("CGI script exited with code " + exitCode + ": " + scriptFile.getPath());
+                if (errOut.size() > 0) {
+                    System.err.println("CGI stderr:\n" + errOut);
+                }
+                throw new IOException("CGI script exited with code " + exitCode + ": " + scriptFile.getPath());
+            }
+
+            return parseCgiOutput(out.toByteArray());
+
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
         }
-
-        InputStream in = process.getInputStream();
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[4096];
-        int n;
-        while ((n = in.read(buf)) != -1) {
-            out.write(buf, 0, n);
-        }
-
-        process.waitFor();
-
-        return parseCgiOutput(out.toByteArray());
     }
 
     private static HttpResponse parseCgiOutput(byte[] output) {
