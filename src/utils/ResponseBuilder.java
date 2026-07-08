@@ -57,7 +57,7 @@ public class ResponseBuilder {
 
         if (isCgiRequest(route, targetFile)) {
             try {
-                return cgiExecutor.handle(targetFile, queryString);
+                return cgiExecutor.handle(request, targetFile, fullPath, queryString);
             } catch (Exception e) {
                 return buildErrorResponse(500, "Internal Server Error", route.getErrorPages());
             }
