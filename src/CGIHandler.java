@@ -2,7 +2,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.file.Files;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import utils.HttpRequest;
@@ -15,6 +15,7 @@ public class CGIHandler {
     public static HttpResponse handle(HttpRequest request, File scriptFile, String scriptPath, String queryString)
             throws Exception {
         ProcessBuilder builder = new ProcessBuilder("python3", scriptFile.getAbsolutePath());
+        builder.redirectError(ProcessBuilder.Redirect.INHERIT);
         Map<String, String> env = builder.environment();
 
         env.put("GATEWAY_INTERFACE", "CGI/1.1");
@@ -37,16 +38,15 @@ public class CGIHandler {
             env.put(key, header.getValue());
         }
 
+        File stdinFile = File.createTempFile("cgi-stdin-", ".tmp");
+        if (body != null && body.length > 0) {
+            Files.write(stdinFile.toPath(), body);
+        }
+        builder.redirectInput(stdinFile);
+
         Process process = null;
         try {
             process = builder.start();
-
-            try (OutputStream stdin = process.getOutputStream()) {
-                if (body != null && body.length > 0) {
-                    stdin.write(body);
-                }
-                stdin.flush();
-            }
 
             InputStream in = process.getInputStream();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -54,12 +54,6 @@ public class CGIHandler {
             int n;
             while ((n = in.read(buf)) != -1) {
                 out.write(buf, 0, n);
-            }
-
-            InputStream errIn = process.getErrorStream();
-            ByteArrayOutputStream errOut = new ByteArrayOutputStream();
-            while ((n = errIn.read(buf)) != -1) {
-                errOut.write(buf, 0, n);
             }
 
             boolean finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -71,10 +65,8 @@ public class CGIHandler {
 
             int exitCode = process.exitValue();
             if (exitCode != 0) {
-                System.err.println("CGI script exited with code " + exitCode + ": " + scriptFile.getPath());
-                if (errOut.size() > 0) {
-                    System.err.println("CGI stderr:\n" + errOut);
-                }
+                System.err.println("CGI script exited with code " + exitCode + ": " + scriptFile.getPath()
+                        + " (script's stderr, if any, was printed above)");
                 throw new IOException("CGI script exited with code " + exitCode + ": " + scriptFile.getPath());
             }
 
@@ -84,6 +76,7 @@ public class CGIHandler {
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
             }
+            stdinFile.delete();
         }
     }
 
