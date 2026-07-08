@@ -3,6 +3,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import utils.HttpRequest;
@@ -12,9 +13,21 @@ public class CGIHandler {
 
     private static final long TIMEOUT_SECONDS = 10;
 
+ 
+    private static final Map<String, String> INTERPRETERS = new HashMap<>();
+    static {
+        INTERPRETERS.put(".py", "python3");
+        INTERPRETERS.put(".js", "node");
+    }
+
     public static HttpResponse handle(HttpRequest request, File scriptFile, String scriptPath, String queryString)
             throws Exception {
-        ProcessBuilder builder = new ProcessBuilder("python3", scriptFile.getAbsolutePath());
+        String interpreter = interpreterFor(scriptFile.getName());
+        if (interpreter == null) {
+            throw new IOException("No CGI interpreter configured for: " + scriptFile.getName());
+        }
+
+        ProcessBuilder builder = new ProcessBuilder(interpreter, scriptFile.getAbsolutePath());
         builder.redirectError(ProcessBuilder.Redirect.INHERIT);
         Map<String, String> env = builder.environment();
 
@@ -78,6 +91,14 @@ public class CGIHandler {
             }
             stdinFile.delete();
         }
+    }
+
+    private static String interpreterFor(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        if (dot == -1) {
+            return null;
+        }
+        return INTERPRETERS.get(fileName.substring(dot).toLowerCase());
     }
 
     private static HttpResponse parseCgiOutput(byte[] output) {
