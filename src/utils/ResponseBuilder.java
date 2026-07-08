@@ -7,8 +7,10 @@ import java.util.Map;
 
 public class ResponseBuilder {
 
+    public static CgiExecutor cgiExecutor;
+
     public static HttpResponse build(HttpRequest request, RouteConfig route) {
-        System.out.println("Building response for: " + request.toDebugString());
+        System.out.println("Building response for: " + request);
         HttpResponse response = new HttpResponse();
 
         if (route == null) {
@@ -27,7 +29,15 @@ public class ResponseBuilder {
             return response;
         }
 
-        String relativePath = request.getPath().substring(route.getPath().length());
+        String fullPath = request.getPath();
+        String queryString = "";
+        int qIdx = fullPath.indexOf('?');
+        if (qIdx != -1) {
+            queryString = fullPath.substring(qIdx + 1);
+            fullPath = fullPath.substring(0, qIdx);
+        }
+
+        String relativePath = fullPath.substring(route.getPath().length());
         if (!relativePath.startsWith("/")) {
             relativePath = "/" + relativePath;
         }
@@ -43,6 +53,15 @@ public class ResponseBuilder {
             targetFile = resolved;
         } catch (IOException e) {
             return buildErrorResponse(500, "Internal Server Error", route.getErrorPages());
+        }
+
+        // This just proves ProcessBuilder + stdout-as-response-body works end to end.
+        if (targetFile.getName().endsWith(".py")) {
+            try {
+                return cgiExecutor.handle(targetFile);
+            } catch (Exception e) {
+                return buildErrorResponse(500, "Internal Server Error", route.getErrorPages());
+            }
         }
 
         if ("POST".equals(request.getMethod())) {
