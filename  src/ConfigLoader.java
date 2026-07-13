@@ -36,8 +36,6 @@ public class ConfigLoader {
             return resolveArray();
         if (c == '"')
             return resolveString();
-
-        // If it's none of the above, it must be a number, boolean, or null
         return resolvePrimitive();
     }
 
@@ -69,9 +67,9 @@ public class ConfigLoader {
     }
 
     public Object resolveObject() {
-        index++; // Skip opening '{'
+        index++; 
         Map<String, Object> obj = new HashMap<>();
-        boolean expectComma = false; // We don't expect a comma on the very first item
+        boolean expectComma = false; 
 
         while (index < json.length()) {
             skipWhitespace();
@@ -101,7 +99,7 @@ public class ConfigLoader {
             if (index >= json.length() || json.charAt(index) != ':') {
                 throwError("Expected ':' after key '" + key + "'");
             }
-            index++; // Step over ':'
+            index++;
 
             Object value = resolveValue();
             obj.put(key, value);
@@ -195,18 +193,16 @@ public class ConfigLoader {
         this.index = index;
     }
 
-    @SuppressWarnings("unchecked") // Suppress warnings for casting Maps and Lists
+    @SuppressWarnings("unchecked") 
     private List<ServerConfig> buildServers(Object rawJsonData) {
         List<ServerConfig> parsedServers = new ArrayList<>();
 
-        // 1. Make sure the root JSON is an Object (Map)
         if (!(rawJsonData instanceof Map)) {
             throw new RuntimeException("Invalid config format: Root must be a JSON object");
         }
 
         Map<String, Object> rootMap = (Map<String, Object>) rawJsonData;
         
-        // 2. Extract the "servers" array
         Object serversArrayObj = rootMap.get("servers");
         if (!(serversArrayObj instanceof List)) {
             throw new RuntimeException("Invalid config format: 'servers' must be an array");
@@ -216,12 +212,11 @@ public class ConfigLoader {
 
         for (Object serverObj : serversArray) {
             Map<String, Object> serverMap = (Map<String, Object>) serverObj;
-
-            String host = (String) serverMap.get("host");
             String serverName = (String) serverMap.get("server_name");
+            String host = (String) serverMap.get("host");
             
-            Number limitNum = (Number) serverMap.get("clientBodyLimit");
-            int clientBodyLimit = limitNum != null ? limitNum.intValue() : 1048576; // Default to 1MB
+            Number limitNum = (Number) serverMap.get("client_body_limit");
+            Long clientBodyLimit = limitNum != null ? limitNum.longValue() : 1048576L; // Default to 1MB
             
             List<Object> rawPorts = (List<Object>) serverMap.get("ports");
             List<Integer> ports = new ArrayList<>();
@@ -240,10 +235,10 @@ public class ConfigLoader {
             if (rawRoutes != null) {
                 for (Object routeObj : rawRoutes) {
                     Map<String, Object> routeMap = (Map<String, Object>) routeObj;
-                    System.err.println("Parsing server configuration:+++++++++++++++++++++++ " + routeMap.get("methods"));
                     String path = (String) routeMap.get("path");
                     String root = (String) routeMap.get("root");
                     List<String> methods = (List<String>) routeMap.get("methods");
+                    
                     Boolean directoryListing = (Boolean) routeMap.get("directory_listing");
                     Long clientBodyLimitRoute = (Long) routeMap.get("client_body_limit");
                     String defaultFile = (String) routeMap.get("default_file");
@@ -252,6 +247,7 @@ public class ConfigLoader {
                  
 
                     RouteConfig routeConfig = new RouteConfig(path, root, defaultFile, methods, directoryListing, clientBodyLimitRoute, cgiExtensions, redirect);
+                  
                     routes.add(routeConfig);
 
                     
@@ -259,10 +255,8 @@ public class ConfigLoader {
                     
                 }
             }
-
-
-
             ServerConfig config = new ServerConfig(host, ports, serverName, errorPages, clientBodyLimit, routes);
+          
             parsedServers.add(config);
         }
         return parsedServers;

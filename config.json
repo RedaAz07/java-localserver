@@ -12,8 +12,9 @@
         "413": "error_pages/413.html",
         "500": "error_pages/500.html"
       },
-      "client_body_limit": 1048576,
-      "routes": [
+      "client_body_limit": 5875875,
+      "routes":
+       [ 
         {
           "path": "/",
           "root": "www",

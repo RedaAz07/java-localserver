@@ -19,7 +19,7 @@ public class Main {
             System.out.println("Routes: ");
             for (RouteConfig route : elem.getRoutes()) {
                 System.out.println("  Path: " + route.getPath());
-                System.out.println("  Method: " + route.getRedirect());
+                System.out.println("  Method: " + route.getMethods());
                 System.out.println("  Handler: " + route.getCgiExtensions());
             }
         

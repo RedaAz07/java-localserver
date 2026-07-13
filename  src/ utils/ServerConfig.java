@@ -8,10 +8,10 @@ public class ServerConfig {
     private List<Integer> ports;
     private String serverName;
     private Map<String, String> errorPages;
-    private int clientBodyLimit;
+    private Long clientBodyLimit;
     private List<RouteConfig> routes;
 
-    public ServerConfig(String host, List<Integer> ports, String serverName, Map<String, String> errorPages, int clientBodyLimit, List<RouteConfig> routes) {
+    public ServerConfig(String host, List<Integer> ports, String serverName, Map<String, String> errorPages, Long clientBodyLimit, List<RouteConfig> routes) {
         this.host = host;
         this.ports = ports;
         this.serverName = serverName;
@@ -25,6 +25,6 @@ public class ServerConfig {
     public List<Integer> getPorts() { return ports; }
     public String getServerName() { return serverName; }
     public Map<String, String> getErrorPages() { return errorPages; }
-    public int getClientBodyLimit() { return clientBodyLimit; }
+    public Long getClientBodyLimit() { return clientBodyLimit; }
     public List<RouteConfig> getRoutes() { return routes; }
 }
