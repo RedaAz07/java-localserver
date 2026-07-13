@@ -1,8 +1,8 @@
 {
   "servers": [
     {
-      "host": "127.0.0.1",
-      "ports": [8080 ],
+      "host": "localhost",
+      "ports": [8000],
       "server_name": "localhost",
       "error_pages": {
         "400": "error_pages/400.html",

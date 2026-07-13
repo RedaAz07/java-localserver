@@ -1,29 +1,19 @@
 
-import utils.RouteConfig;
+import java.util.List;
 import utils.ServerConfig;
-
 
 
 public class Main {
     public static void main(String[] args) {
-        // Server code implementation goes here
         ConfigLoader configLoader = new ConfigLoader("config.json");
         configLoader.GlobalFormat();
+        try {
+            List<ServerConfig> serverConfig = configLoader.getServers();
+            new Server(serverConfig).start();;
+        } catch (Exception e) {
+            System.out.println("Error loading server configuration: " + e.getMessage());
+        System.exit(1);
 
-        for (ServerConfig elem : configLoader.getServers()) {
-            System.out.println("Server Name: " + elem.getServerName());
-            System.out.println("Host: " + elem.getHost());
-            System.out.println("Ports: " + elem.getPorts());
-            System.out.println("Error Pages: " + elem.getErrorPages());
-            System.out.println("Client Body Limit: " + elem.getClientBodyLimit());
-            System.out.println("Routes: ");
-            for (RouteConfig route : elem.getRoutes()) {
-                System.out.println("  Path: " + route.getPath());
-                System.out.println("  Method: " + route.getMethods());
-                System.out.println("  Handler: " + route.getCgiExtensions());
-            }
-        
-            
         }
     }
-}
+}   
