@@ -1,5 +1,6 @@
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
@@ -47,6 +48,9 @@ public class Server {
     }
 
     private void runEventLoop() throws IOException {
+        ByteBuffer buffer = ByteBuffer.allocate(1024);
+
+        // This is your single thread holding the entire server alive
         while (true) {
             selector.select(1000);
             Iterator<SelectionKey> keys = selector.selectedKeys().iterator();
@@ -63,7 +67,8 @@ public class Server {
                 if (key.isAcceptable()) {
                     acceptConnection(key);  
                 } else if (key.isReadable()) {
-                    readRequest(key);
+                    // A browser is sending us an HTTP request (GET, POST, etc.)
+                    readRequest(key, buffer);
                 } else if (key.isWritable()) {
                     sendResponse(key);
                 }
@@ -73,21 +78,51 @@ public class Server {
     }
 
     private void acceptConnection(SelectionKey key) throws IOException {
-
-        ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
-        SocketChannel clientChannel = serverChannel.accept();
-        clientChannel.configureBlocking(false);
-
-        // Register the new connection for reading
-        clientChannel.register(selector, SelectionKey.OP_READ);
+        ServerSocketChannel server = (ServerSocketChannel) key.channel();
+        SocketChannel client = server.accept();
+        client.configureBlocking(false);
+        client.register(selector, SelectionKey.OP_READ);
+        System.out.println("Accepted new connection from: " + client.getRemoteAddress());
     }
 
-    private void readRequest(SelectionKey key) throws IOException {
+    private void readRequest(SelectionKey key, ByteBuffer buffer) throws IOException {
+            // 4. Read the client request
+            SocketChannel client = (SocketChannel) key.channel();
+            buffer.clear();
+            int bytesRead = client.read(buffer);
 
+            if (bytesRead == -1) {
+                client.close();
+                return;
+            }
 
+            buffer.flip(); // Prepare buffer for reading
+
+            // Print received data
+            byte[] data = new byte[buffer.limit()];
+            buffer.get(data);
+            System.out.println("Received: " + new String(data).trim());
+
+            // 5. Send the response back
+            buffer.rewind(); // Rewind to write the same data back
+            client.write(buffer);
+
+            // Close the client channel after responding
+            client.close();
     }
 
     private void sendResponse(SelectionKey key) throws IOException {
-        // TODO: Implement writing the HTTP response
+        SocketChannel client = (SocketChannel) key.channel();
+        ByteBuffer buffer = (ByteBuffer) key.attachment();
+
+        // Attempt to write the remaining bytes to the socket
+        client.write(buffer);
+
+        // Check if there is still data to be sent (e.g., if the socket buffer got full)
+        if (!buffer.hasRemaining()) {
+            buffer.clear();
+            // Switch interest back to reading new requests from this client
+            key.interestOps(SelectionKey.OP_READ);
+        }
     }
 }

@@ -1,11 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+rm -rf out
+mkdir out
 
-mkdir -p out
-# Find and compile all .java files (handles paths with spaces)
-if ! find . -type f -name '*.java' -print0 | xargs -0 javac -d out; then
-	echo "Compilation failed"
-	exit 1
-fi
-
+javac -d out $(find src -name "*.java")
 java -cp out Main

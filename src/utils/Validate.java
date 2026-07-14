@@ -8,11 +8,9 @@ public class Validate {
         }
         if (config.getHost() == null || config.getHost().isEmpty()) {
 
-
             return false;
         }
-       String  host  =   config.getHost();
-   
+        String host = config.getHost();
 
         return true;
     }
