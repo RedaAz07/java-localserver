@@ -6,7 +6,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.List;
-import utils.ServerConfig; 
+import utils.ServerConfig;
 
 public class Server {
     private final List<ServerConfig> serverConfigs;
@@ -23,27 +23,25 @@ public class Server {
         // 2. Loop through every server block in your config
         for (ServerConfig config : serverConfigs) {
             String host = config.getHost();
-            
-            // 3. Loop through every port for this specific server
+
             for (int port : config.getPorts()) {
-                
-                // Open a new channel (highway) for this port
-                ServerSocketChannel serverChannel = ServerSocketChannel.open();
-                
-                // CRITICAL: Tell the OS this channel is non-blocking!
-                serverChannel.configureBlocking(false);
-                
-                // Bind it to the specific IP and Port
-                serverChannel.bind(new InetSocketAddress(host, port));
-                
-                // Register this channel with our Selector. 
-                // OP_ACCEPT means: "Wake me up when a new browser tries to connect."
-                serverChannel.register(selector, SelectionKey.OP_ACCEPT);
-                
-                System.out.println("Started virtual server on " + host + ":" + port);
+
+                try {
+                    ServerSocketChannel serverChannel = ServerSocketChannel.open();
+
+                    serverChannel.configureBlocking(false);
+
+                    serverChannel.bind(new InetSocketAddress(host, port));
+
+                    serverChannel.register(selector, SelectionKey.OP_ACCEPT);
+
+                    System.out.println("Started virtual server on " + host + ":" + port);
+                } catch (Exception e) {
+                    System.err.println("Failed to start virtual server on " + host + ":" + port);
+                    continue;
+                }
             }
         }
-
         System.out.println("All ports bound. Entering the event loop...");
         runEventLoop();
     }
@@ -51,7 +49,7 @@ public class Server {
     private void runEventLoop() throws IOException {
         // This is your single thread holding the entire server alive
         while (true) {
-            
+
             // This method blocks until at least one event (red flag) happens on a channel
             selector.select();
 
@@ -60,10 +58,11 @@ public class Server {
 
             while (keys.hasNext()) {
                 SelectionKey key = keys.next();
-                
-                // CRITICAL: You must remove the key from the iterator, 
-                // otherwise the selector will try to process the same event again on the next loop!
-                keys.remove(); 
+
+                // CRITICAL: You must remove the key from the iterator,
+                // otherwise the selector will try to process the same event again on the next
+                // loop!
+                keys.remove();
 
                 if (!key.isValid()) {
                     continue;
