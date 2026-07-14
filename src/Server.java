@@ -25,26 +25,24 @@ public class Server {
         for (ServerConfig config : serverConfigs) {
             String host = config.getHost();
 
-            // 3. Loop through every port for this specific server
             for (int port : config.getPorts()) {
 
-                // Open a new channel (highway) for this port
-                ServerSocketChannel serverChannel = ServerSocketChannel.open();
+                try {
+                    ServerSocketChannel serverChannel = ServerSocketChannel.open();
 
-                // CRITICAL: Tell the OS this channel is non-blocking!
-                serverChannel.configureBlocking(false);
+                    serverChannel.configureBlocking(false);
 
-                // Bind it to the specific IP and Port
-                serverChannel.bind(new InetSocketAddress(host, port));
+                    serverChannel.bind(new InetSocketAddress(host, port));
 
-                // Register this channel with our Selector.
-                // OP_ACCEPT means: "Wake me up when a new browser tries to connect."
-                serverChannel.register(selector, SelectionKey.OP_ACCEPT);
+                    serverChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-                System.out.println("Started virtual server on " + host + ":" + port);
+                    System.out.println("Started virtual server on " + host + ":" + port);
+                } catch (Exception e) {
+                    System.err.println("Failed to start virtual server on " + host + ":" + port);
+                    continue;
+                }
             }
         }
-
         System.out.println("All ports bound. Entering the event loop...");
         runEventLoop();
     }
