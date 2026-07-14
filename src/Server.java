@@ -5,9 +5,12 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import utils.ServerConfig;
+import utils.HttpRequest;
+import utils.RequestParser;
 
 public class Server {
     private final List<ServerConfig> serverConfigs;
@@ -65,7 +68,7 @@ public class Server {
                 }
 
                 if (key.isAcceptable()) {
-                    acceptConnection(key);  
+                    acceptConnection(key);
                 } else if (key.isReadable()) {
                     // A browser is sending us an HTTP request (GET, POST, etc.)
                     readRequest(key, buffer);
@@ -98,23 +101,10 @@ public class Server {
         buffer.flip();
         byte[] data = new byte[buffer.limit()];
         buffer.get(data);
-        String requestString = new String(data).trim();
-        
-        System.out.println("Received:\n" + requestString);
+        HttpRequest httpRequest = RequestParser.parseRequest(data);
 
-        // 1. استخراج السطر الأول من الطلب (مثال: GET / HTTP/1.1)
-        String[] lines = requestString.split("\r\n");
-        if (lines.length > 0) {
-            String[] requestLine = lines[0].split(" ");
-            // التأكد من أن السطر يحتوي على Method و Path و Protocol
-            if (requestLine.length == 3) {
-                String method = requestLine[0]; // GET
-                String path = requestLine[1]; // / أو /about
+        System.out.println(httpRequest.getMethod() + " " + httpRequest.getPath() + " " + httpRequest.getVersion()+"----------" +  Arrays.toString(httpRequest.getBody()));
 
-                // 2. توجيه الطلب (Routing)
-                handleRoute(client, path);
-            }
-        }
     }
 
     private void sendResponse(SelectionKey key) throws IOException {
@@ -132,39 +122,4 @@ public class Server {
         }
     }
 
-    private void handleRoute(SocketChannel client, String path) throws IOException {
-        String responseBody = "";
-        int statusCode = 200;
-        String statusMessage = "OK";
-
-        // تحديد المحتوى بناءً على المسار
-        if (path.equals("/")) {
-            // هنا يمكنك قراءة محتوى ملف index.html من المسار المحدد في config.json
-            responseBody = "<html><body><h1>Welcome Home!</h1><p>This is the default index page.</p></body></html>";
-        } else if (path.equals("/about")) {
-            responseBody = "<html><body><h1>About Us</h1><p>ahmed's Custom Java Server</p></body></html>";
-        } else {
-            statusCode = 404;
-            statusMessage = "Not Found";
-            responseBody = "<html><body><h1>404 - Page Not Found</h1></body></html>";
-        }
-
-        // 3. بناء استجابة HTTP قياسية (HTTP Response Format)
-        // يجب أن تفصل بـ \r\n بين الأسطر، وبسطرين فارغين \r\n\r\n قبل محتوى الـ Body
-        String httpResponse = "HTTP/1.1 " + statusCode + " " + statusMessage + "\r\n" +
-                "Content-Type: text/html; charset=UTF-8\r\n" +
-                "Content-Length: " + responseBody.getBytes().length + "\r\n" +
-                "Connection: close\r\n" +
-                "\r\n" +
-                responseBody;
-
-        // إرسال الاستجابة للمتصفح
-        ByteBuffer responseBuffer = ByteBuffer.wrap(httpResponse.getBytes());
-        while (responseBuffer.hasRemaining()) {
-            client.write(responseBuffer);
-        }
-
-        // إغلاق الاتصال بعد إرسال الرد
-        client.close();
-    }
 }
