@@ -13,13 +13,12 @@
         "500": "error_pages/500.html"
       },
       "client_body_limit": 5875875,
-      "routes":
-       [ 
+      "routes": [
         {
           "path": "/",
           "root": "www",
           "default_file": "index.html",
-          "methods": ["GET","DELETE","POST"],
+          "methods": ["GET", "DELETE", "POST"],
           "directory_listing": true
         },
         {
@@ -29,17 +28,16 @@
           "client_body_limit": 21474836480
         },
         {
-
           "path": "/add",
           "root": "www",
           "default_file": "index.html",
-          "methods": ["GET","DELETE","POST"],
+          "methods": ["GET", "DELETE", "POST"],
           "directory_listing": false
         },
         {
           "path": "/cgi",
           "root": "cgi",
-          "methods": ["GET","POST","DELETE"],
+          "methods": ["GET", "POST", "DELETE"],
           "cgi_extensions": [".py"],
           "client_body_limit": 21474836480
         },
@@ -49,9 +47,10 @@
           "methods": ["GET"]
         }
       ]
-    },{
+    },
+    {
       "host": "127.0.0.1",
-      "ports": [8080,8081],
+      "ports": [8081, 8082],
       "server_name": "jjjjj",
       "error_pages": {
         "400": "error_pages/400.html",
@@ -79,7 +78,7 @@
         {
           "path": "/cgi",
           "root": "cgi",
-          "methods": ["GET","POST","DELETE"],
+          "methods": ["GET", "POST", "DELETE"],
           "cgi_extensions": [".py"],
           "client_body_limit": 21474836480
         },

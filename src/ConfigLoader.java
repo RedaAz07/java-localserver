@@ -174,7 +174,7 @@ public class ConfigLoader {
                 return Long.parseLong(strValue);
             }
         } catch (NumberFormatException e) {
-            return strValue; // Fallback
+            return strValue;
         }
     }
 
@@ -217,7 +217,7 @@ public class ConfigLoader {
             String host = (String) serverMap.get("host");
 
             Number limitNum = (Number) serverMap.get("client_body_limit");
-            Long clientBodyLimit = limitNum != null ? limitNum.longValue() : 1048576L; // Default to 1MB
+            Long clientBodyLimit = limitNum != null ? limitNum.longValue() : 1048576L;
 
             List<Object> rawPorts = (List<Object>) serverMap.get("ports");
             List<Integer> ports = new ArrayList<>();

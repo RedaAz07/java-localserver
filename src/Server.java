@@ -26,16 +26,13 @@ public class Server {
     }
 
     public void start() throws IOException {
-        // 1. Open the grand traffic controller
         this.selector = Selector.open();
 
-        // 2. Loop through every server block in your config
         for (ServerConfig config : serverConfigs) {
             this.routeConfigs.addAll(config.getRoutes());
             String host = config.getHost();
 
             for (int port : config.getPorts()) {
-
                 try {
                     ServerSocketChannel serverChannel = ServerSocketChannel.open();
 
@@ -59,36 +56,25 @@ public class Server {
     private void runEventLoop() throws IOException {
         ByteBuffer buffer = ByteBuffer.allocate(1024);
 
-        // This is your single thread holding the entire server alive
         while (true) {
 
-            // This method blocks until at least one event (red flag) happens on a channel
             selector.select();
 
-            // Get the list of channels that are ready for action
             Iterator<SelectionKey> keys = selector.selectedKeys().iterator();
 
             while (keys.hasNext()) {
                 SelectionKey key = keys.next();
-
-                // CRITICAL: You must remove the key from the iterator,
-                // otherwise the selector will try to process the same event again on the next
-                // loop!
                 keys.remove();
 
                 if (!key.isValid()) {
                     continue;
                 }
 
-                // Check what kind of event woke us up
                 if (key.isAcceptable()) {
-                    // A new browser is knocking on the door
                     acceptConnection(key);
                 } else if (key.isReadable()) {
-                    // A browser is sending us an HTTP request (GET, POST, etc.)
                     readRequest(key, buffer);
                 } else if (key.isWritable()) {
-                    // We are ready to send our HTTP response back to the browser
                     sendResponse(key);
                 }
             }
@@ -123,7 +109,6 @@ public class Server {
         RouteConfig matchedRoute = Router.matchRoute(httpRequest.getPath(), routeConfigs);
         HttpResponse response = ResponseBuilder.build(httpRequest, matchedRoute);
 
-        // HttpRequestParser.parseRequest(client, requestString);
         ByteBuffer responseBuffer = response.toByteBuffer();
         key.attach(responseBuffer);
 

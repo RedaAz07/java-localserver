@@ -23,7 +23,6 @@ public class HttpResponse {
         setHeader("Content-Length", String.valueOf(body.length));
     }
 
-    // Converts the entire HTTP response into a ByteBuffer ready to be sent via NIO
     public ByteBuffer toByteBuffer() {
         StringBuilder responseString = new StringBuilder();
         responseString.append("HTTP/1.1 ").append(statusCode).append(" ").append(statusMessage).append("\r\n");
@@ -32,13 +31,13 @@ public class HttpResponse {
             responseString.append(header.getKey()).append(": ").append(header.getValue()).append("\r\n");
         }
         
-        responseString.append("\r\n"); // Empty line separating headers and body
+        responseString.append("\r\n");
 
         byte[] headerBytes = responseString.toString().getBytes();
         ByteBuffer buffer = ByteBuffer.allocate(headerBytes.length + body.length);
         buffer.put(headerBytes);
         buffer.put(body);
-        buffer.flip(); // Prepare for reading by the SocketChannel
+        buffer.flip();
         
         return buffer;
     }
