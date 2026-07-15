@@ -9,14 +9,13 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
+import utils.ClientState;
 import utils.HttpRequest;
 import utils.HttpResponse;
 import utils.RequestParser;
 import utils.ResponseBuilder;
 import utils.RouteConfig;
 import utils.ServerConfig;
-import utils.HttpRequest;
-import utils.RequestParser;
 
 public class Server {
     private final List<ServerConfig> serverConfigs;
@@ -94,6 +93,12 @@ public class Server {
 
     private void readRequest(SelectionKey key, ByteBuffer buffer) throws IOException {
         SocketChannel client = (SocketChannel) key.channel();
+        ClientState state = (ClientState) key.attachment();
+        if (state == null) {
+            state = new ClientState();
+            key.attach(state);
+        }
+
         buffer.clear();
         int bytesRead = client.read(buffer);
 
@@ -105,28 +110,99 @@ public class Server {
         buffer.flip();
         byte[] data = new byte[buffer.limit()];
         buffer.get(data);
-        String requestString = new String(data).trim();
+        state.buffer.write(data);
+        byte[] allDataSoFar = state.buffer.toByteArray();
+System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Total collected so far: " + allDataSoFar.length + " bytes.");
+        if (!state.isHeadersParsed) {
+            int headerEnd = RequestParser.findHeaderEndIndex(allDataSoFar);
 
-        System.out.println("Received:\n" + requestString);
-        HttpRequest httpRequest = RequestParser.parseRequest(data);
-        RouteConfig matchedRoute = Router.matchRoute(httpRequest.getPath(), routeConfigs);
-        HttpResponse response = ResponseBuilder.build(httpRequest, matchedRoute);
+            if (headerEnd != -1) {
+                state.headerLength = headerEnd;
+                HttpRequest parsedReq = RequestParser.parseRequest(allDataSoFar);
 
-        ByteBuffer responseBuffer = response.toByteBuffer();
-        key.attach(responseBuffer);
+                if (parsedReq != null) {
+                    state.request = parsedReq;
+                    state.isHeadersParsed = true;
 
-        key.interestOps(SelectionKey.OP_WRITE);
-    }
+                    state.matchedRoute = Router.matchRoute(state.request.getPath(), routeConfigs);
+                    checkBodyLimit(state);
+                }
+            }
+        }
 
-    private void sendResponse(SelectionKey key) throws IOException {
-        SocketChannel client = (SocketChannel) key.channel();
-        ByteBuffer buffer = (ByteBuffer) key.attachment();
+        if (state.isHeadersParsed && !state.isRequestComplete) {
+            checkIfBodyIsComplete(state, allDataSoFar);
+        }
 
-        client.write(buffer);
+        if (state.isRequestComplete) {
+            HttpResponse response;
 
-        if (!buffer.hasRemaining()) {
-            buffer.clear();
-            key.interestOps(SelectionKey.OP_READ);
+            if (state.isError) {
+                response = ResponseBuilder.buildErrorResponse(413, "Payload Too Large");
+            } else {
+                response = ResponseBuilder.build(state.request, state.matchedRoute);
+            }
+
+            state.responseBuffer = response.toByteBuffer();
+            key.interestOps(SelectionKey.OP_WRITE);
         }
     }
+
+   private void sendResponse(SelectionKey key) throws IOException {
+        SocketChannel client = (SocketChannel) key.channel();
+        ClientState state = (ClientState) key.attachment(); 
+
+        if (state.responseBuffer != null) {
+            client.write(state.responseBuffer);
+
+            if (!state.responseBuffer.hasRemaining()) {
+                key.attach(new ClientState());
+                key.interestOps(SelectionKey.OP_READ);
+            }
+        }
+    }
+
+    private void checkBodyLimit(ClientState state) {
+        String contentLengthStr = state.request.getHeader("Content-Length");
+
+        if (contentLengthStr != null) {
+            long contentLength = Long.parseLong(contentLengthStr);
+            long limit = 5242880;
+            if (state.matchedRoute != null) {
+                limit = state.matchedRoute.getClientBodyLimit()== null ? 520042880 : state.matchedRoute.getClientBodyLimit();
+            }
+            if (contentLength > limit) {
+                System.err.println("Payload Too Large! Limit: " + limit + ", Requested: " + contentLength);
+                state.isError = true;
+                state.isRequestComplete = true;
+            }
+        }
+    }
+
+    private void checkIfBodyIsComplete(ClientState state, byte[] allDataSoFar) {
+        if (state.isError)
+            return;
+
+        String contentLengthStr = state.request.getHeader("Content-Length");
+
+        if (contentLengthStr != null) {
+            int expectedBodySize = Integer.parseInt(contentLengthStr);
+            int currentBodySize = allDataSoFar.length - state.headerLength;
+
+            if (currentBodySize >= expectedBodySize) {
+                state.isRequestComplete = true;
+
+                byte[] completeBody = Arrays.copyOfRange(allDataSoFar, state.headerLength, allDataSoFar.length);
+                state.request.setBody(completeBody);
+            }
+        } else if ("chunked".equals(state.request.getHeader("Transfer-Encoding"))) {
+            String dataStr = new String(allDataSoFar);
+            if (dataStr.endsWith("0\r\n\r\n")) {
+                state.isRequestComplete = true;
+            }
+        } else {
+            state.isRequestComplete = true;
+        }
+    }
+
 }

@@ -53,7 +53,7 @@ public class ResponseBuilder {
         }
     }
 
-    private static HttpResponse buildErrorResponse(int code, String message) {
+    public static HttpResponse buildErrorResponse(int code, String message) {
         HttpResponse response = new HttpResponse();
         response.setStatusCode(code, message);
         response.setHeader("Content-Type", "text/html; charset=UTF-8");
