@@ -4,8 +4,6 @@ import java.util.Arrays;
 
 public class RequestParser {
     public static HttpRequest parseRequest(byte[] request) {
-        // Split the request into lines
-
         if (request == null || request.length < 4) {
             return null;
         }

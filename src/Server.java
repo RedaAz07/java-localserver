@@ -8,28 +8,34 @@ import java.nio.channels.SocketChannel;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+
+import utils.HttpRequest;
+import utils.HttpResponse;
+import utils.RequestParser;
+import utils.ResponseBuilder;
+import utils.RouteConfig;
 import utils.ServerConfig;
 import utils.HttpRequest;
 import utils.RequestParser;
 
 public class Server {
     private final List<ServerConfig> serverConfigs;
+    private List<RouteConfig> routeConfigs;
     private Selector selector;
 
     public Server(List<ServerConfig> serverConfigs) {
         this.serverConfigs = serverConfigs;
+        this.routeConfigs = new java.util.ArrayList<>();
     }
 
     public void start() throws IOException {
-        // 1. Open the grand traffic controller
         this.selector = Selector.open();
 
-        // 2. Loop through every server block in your config
         for (ServerConfig config : serverConfigs) {
+            this.routeConfigs.addAll(config.getRoutes());
             String host = config.getHost();
 
             for (int port : config.getPorts()) {
-
                 try {
                     ServerSocketChannel serverChannel = ServerSocketChannel.open();
 
@@ -53,14 +59,13 @@ public class Server {
     private void runEventLoop() throws IOException {
         ByteBuffer buffer = ByteBuffer.allocate(1024);
 
-        // This is your single thread holding the entire server alive
         while (true) {
             selector.select(1000);
+
             Iterator<SelectionKey> keys = selector.selectedKeys().iterator();
 
             while (keys.hasNext()) {
                 SelectionKey key = keys.next();
-
                 keys.remove();
 
                 if (!key.isValid()) {
@@ -70,7 +75,6 @@ public class Server {
                 if (key.isAcceptable()) {
                     acceptConnection(key);
                 } else if (key.isReadable()) {
-                    // A browser is sending us an HTTP request (GET, POST, etc.)
                     readRequest(key, buffer);
                 } else if (key.isWritable()) {
                     sendResponse(key);
@@ -101,25 +105,28 @@ public class Server {
         buffer.flip();
         byte[] data = new byte[buffer.limit()];
         buffer.get(data);
+        String requestString = new String(data).trim();
+
+        System.out.println("Received:\n" + requestString);
         HttpRequest httpRequest = RequestParser.parseRequest(data);
+        RouteConfig matchedRoute = Router.matchRoute(httpRequest.getPath(), routeConfigs);
+        HttpResponse response = ResponseBuilder.build(httpRequest, matchedRoute);
 
-        System.out.println(httpRequest.getMethod() + " " + httpRequest.getPath() + " " + httpRequest.getVersion()+"----------" +  Arrays.toString(httpRequest.getBody()));
+        ByteBuffer responseBuffer = response.toByteBuffer();
+        key.attach(responseBuffer);
 
+        key.interestOps(SelectionKey.OP_WRITE);
     }
 
     private void sendResponse(SelectionKey key) throws IOException {
         SocketChannel client = (SocketChannel) key.channel();
         ByteBuffer buffer = (ByteBuffer) key.attachment();
 
-        // Attempt to write the remaining bytes to the socket
         client.write(buffer);
 
-        // Check if there is still data to be sent (e.g., if the socket buffer got full)
         if (!buffer.hasRemaining()) {
             buffer.clear();
-            // Switch interest back to reading new requests from this client
             key.interestOps(SelectionKey.OP_READ);
         }
     }
-
 }

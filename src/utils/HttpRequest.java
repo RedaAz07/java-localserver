@@ -67,5 +67,4 @@ public class HttpRequest {
         this.headers = headers != null ? headers : new HashMap<>();
         this.body = body;
     }
-
 }
