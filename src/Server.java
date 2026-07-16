@@ -16,11 +16,13 @@ import utils.RequestParser;
 import utils.ResponseBuilder;
 import utils.RouteConfig;
 import utils.ServerConfig;
+import utils.Session;
 
 public class Server {
     private final List<ServerConfig> serverConfigs;
     private List<RouteConfig> routeConfigs;
     private Selector selector;
+    private static final int Reqlimit = 5242880; // 5MB
 
     public Server(List<ServerConfig> serverConfigs) {
         this.serverConfigs = serverConfigs;
@@ -112,7 +114,6 @@ public class Server {
         buffer.get(data);
         state.buffer.write(data);
         byte[] allDataSoFar = state.buffer.toByteArray();
-System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Total collected so far: " + allDataSoFar.length + " bytes.");
         if (!state.isHeadersParsed) {
             int headerEnd = RequestParser.findHeaderEndIndex(allDataSoFar);
 
@@ -143,6 +144,13 @@ System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Tota
                 response = ResponseBuilder.build(state.request, state.matchedRoute);
             }
 
+            // --- session handling ---
+            state.session = Session.fromRequest(state.request);
+            if (state.session == null) {
+                state.session = Session.create();
+            }
+            response.addSetCookie(state.session.toCookie());
+
             state.responseBuffer = response.toByteBuffer();
             key.interestOps(SelectionKey.OP_WRITE);
         }
@@ -167,9 +175,9 @@ System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Tota
 
         if (contentLengthStr != null) {
             long contentLength = Long.parseLong(contentLengthStr);
-            long limit = 5242880;
+            long limit = Reqlimit;
             if (state.matchedRoute != null) {
-                limit = state.matchedRoute.getClientBodyLimit()== null ? 520042880 : state.matchedRoute.getClientBodyLimit();
+                limit = state.matchedRoute.getClientBodyLimit()== null ? Reqlimit : state.matchedRoute.getClientBodyLimit();
             }
             if (contentLength > limit) {
                 System.err.println("Payload Too Large! Limit: " + limit + ", Requested: " + contentLength);
