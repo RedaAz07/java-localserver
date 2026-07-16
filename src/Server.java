@@ -113,15 +113,15 @@ public class Server {
         buffer.get(data);
         state.buffer.write(data);
         byte[] allDataSoFar = state.buffer.toByteArray();
-        System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Total collected so far: "
-                + allDataSoFar.length + " bytes.");
+        System.out.println("Received data: " + new String(allDataSoFar));
+
         if (!state.isHeadersParsed) {
             int headerEnd = RequestParser.findHeaderEndIndex(allDataSoFar);
 
             if (headerEnd != -1) {
                 state.headerLength = headerEnd;
                 HttpRequest parsedReq = RequestParser.parseRequest(allDataSoFar);
-
+                System.out.println("Parsed Request: " + parsedReq.getHeader("Content-Length"));
                 if (parsedReq != null) {
                     state.request = parsedReq;
                     state.isHeadersParsed = true;
@@ -170,6 +170,8 @@ public class Server {
 
         if (contentLengthStr != null) {
             long contentLength = Long.parseLong(contentLengthStr);
+
+            System.out.println("--------------------------------" + state.matchedRoute.getClientBodyLimit());
             long limit = 5242880;
             if (state.matchedRoute != null) {
                 limit = state.matchedRoute.getClientBodyLimit() == null ? 520042880
@@ -188,12 +190,12 @@ public class Server {
             return;
 
         String contentLengthStr = state.request.getHeader("Content-Length");
-
         if (contentLengthStr != null) {
-            int expectedBodySize = Integer.parseInt(contentLengthStr);
+            long expectedBodySize = Long.parseLong(contentLengthStr);
             int currentBodySize = allDataSoFar.length - state.headerLength;
 
             if (currentBodySize >= expectedBodySize) {
+                System.out.println("*****************************" + contentLengthStr);
                 state.isRequestComplete = true;
 
                 byte[] completeBody = Arrays.copyOfRange(allDataSoFar, state.headerLength, allDataSoFar.length);

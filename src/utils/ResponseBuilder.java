@@ -8,6 +8,7 @@ import java.util.Map;
 public class ResponseBuilder {
 
     public static HttpResponse build(HttpRequest request, RouteConfig route) {
+        System.out.println("Building response for request: " + request.getMethod() + " " + request.getPath() + " " + request.getHeaders());
         HttpResponse response = new HttpResponse();
 
         if (route == null) {
@@ -31,10 +32,8 @@ public class ResponseBuilder {
             relativePath = "/" + relativePath;
         }
 
-        // Normalize to prevent directory traversal
         File targetFile = new File(route.getRoot() + relativePath);
 
-        // Resolve canonical path to prevent traversal attacks
         try {
             File rootDir = new File(route.getRoot()).getCanonicalFile();
             File resolved = targetFile.getCanonicalFile();
@@ -46,17 +45,14 @@ public class ResponseBuilder {
             return buildErrorResponse(500, "Internal Server Error", route.getErrorPages());
         }
 
-        // Handle POST (file upload)
         if ("POST".equals(request.getMethod())) {
             return handlePost(request, route, targetFile);
         }
 
-        // Handle DELETE
         if ("DELETE".equals(request.getMethod())) {
             return handleDelete(route, targetFile);
         }
 
-        // Handle GET (serve files / directory listing)
         return handleGet(route, targetFile, relativePath);
     }
 
@@ -120,7 +116,6 @@ public class ResponseBuilder {
         html.append("<h1>Index of ").append(escapeHtml(relativePath)).append("</h1>\n");
         html.append("<hr>\n<pre>\n");
 
-        // Parent directory link (if not at root)
         if (!relativePath.equals("/") && !relativePath.isEmpty()) {
             String parentPath = relativePath.substring(0, relativePath.lastIndexOf('/'));
             if (parentPath.isEmpty())
@@ -169,29 +164,83 @@ public class ResponseBuilder {
     }
 
     private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
-        if (targetFile.isDirectory()) {
-            return buildErrorResponse(400, "Bad Request - Cannot upload to a directory path", route.getErrorPages());
+        System.out.println("Handling POST request for: " + targetFile.getPath());
+
+        File uploadDir = new File(route.getRoot());
+        if (!uploadDir.exists()) {
+            try {
+                Files.createDirectories(uploadDir.toPath());
+            } catch (IOException e) {
+                System.err.println("Failed to create upload directory: " + e.getMessage());
+                return buildErrorResponse(500, "Internal Server Error - Cannot create upload directory",
+                        route.getErrorPages());
+            }
         }
 
+        String contentType = request.getHeader("Content-Type");
+        boolean isMultipart = contentType != null
+                && contentType.toLowerCase().contains("multipart/form-data");
+
         try {
-            // Ensure parent directories exist
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                Files.createDirectories(parentDir.toPath());
+            if (isMultipart) {
+                request.parseMultipartBody();
+                Map<String, byte[]> uploadedFiles = request.getUploadedFiles();
+
+                if (uploadedFiles.isEmpty()) {
+                    System.err.println("Upload failed: No files found in multipart body");
+                    return buildErrorResponse(400, "Bad Request - No files found in upload", route.getErrorPages());
+                }
+
+                StringBuilder savedFiles = new StringBuilder();
+                for (Map.Entry<String, byte[]> entry : uploadedFiles.entrySet()) {
+                    String filename = entry.getKey();
+                    byte[] fileContent = entry.getValue();
+
+                    String safeName = new File(filename).getName();
+                    File outFile = new File(uploadDir, safeName);
+
+                    Files.write(outFile.toPath(), fileContent);
+                    System.out.println("Saved uploaded file: " + outFile.getAbsolutePath()
+                            + " (" + fileContent.length + " bytes)");
+
+                    if (savedFiles.length() > 0) {
+                        savedFiles.append(", ");
+                    }
+                    savedFiles.append(safeName);
+                }
+
+                HttpResponse response = new HttpResponse();
+                response.setStatusCode(201, "Created");
+                response.setHeader("Content-Type", "text/plain; charset=UTF-8");
+                response.setBody(("File(s) uploaded successfully: " + savedFiles.toString()).getBytes());
+                return response;
+
+            } else {
+                if (targetFile.isDirectory()) {
+                    System.err.println("Upload failed: Cannot upload to a directory path without a filename");
+                    return buildErrorResponse(400,
+                            "Bad Request - Cannot upload to a directory path. Use multipart/form-data for file uploads.",
+                            route.getErrorPages());
+                }
+
+                File parentDir = targetFile.getParentFile();
+                if (parentDir != null && !parentDir.exists()) {
+                    Files.createDirectories(parentDir.toPath());
+                }
+
+                byte[] body = request.getBody();
+                if (body == null) {
+                    body = new byte[0];
+                }
+
+                Files.write(targetFile.toPath(), body);
+
+                HttpResponse response = new HttpResponse();
+                response.setStatusCode(201, "Created");
+                response.setHeader("Content-Type", "text/plain; charset=UTF-8");
+                response.setBody(("File uploaded successfully: " + targetFile.getName()).getBytes());
+                return response;
             }
-
-            byte[] body = request.getBody();
-            if (body == null) {
-                body = new byte[0];
-            }
-
-            Files.write(targetFile.toPath(), body);
-
-            HttpResponse response = new HttpResponse();
-            response.setStatusCode(201, "Created");
-            response.setHeader("Content-Type", "text/plain; charset=UTF-8");
-            response.setBody(("File uploaded successfully: " + targetFile.getName()).getBytes());
-            return response;
 
         } catch (IOException e) {
             System.err.println("Upload failed: " + e.getMessage());
@@ -200,8 +249,21 @@ public class ResponseBuilder {
     }
 
     private static HttpResponse handleDelete(RouteConfig route, File targetFile) {
+        File rootDir = new File(route.getRoot());
+        try {
+            rootDir = rootDir.getCanonicalFile();
+            targetFile = targetFile.getCanonicalFile();
+
+            if (!targetFile.getPath().startsWith(rootDir.getPath())) {
+                return buildErrorResponse(403, "Forbidden", route.getErrorPages());
+            }
+        } catch (IOException e) {
+            return buildErrorResponse(500, "Internal Server Error", route.getErrorPages());
+        }
+
         if (!targetFile.exists()) {
-            return buildErrorResponse(404, "Not Found", route.getErrorPages());
+            return buildErrorResponse(404, "Not Found - File '" + targetFile.getName()
+                    + "' does not exist", route.getErrorPages());
         }
 
         if (targetFile.isDirectory()) {
@@ -209,12 +271,15 @@ public class ResponseBuilder {
         }
 
         try {
+            String filename = targetFile.getName();
             Files.delete(targetFile.toPath());
+
+            System.out.println("Deleted file: " + targetFile.getAbsolutePath());
 
             HttpResponse response = new HttpResponse();
             response.setStatusCode(200, "OK");
             response.setHeader("Content-Type", "text/plain; charset=UTF-8");
-            response.setBody(("File deleted successfully: " + targetFile.getName()).getBytes());
+            response.setBody(("File deleted successfully: " + filename).getBytes());
             return response;
 
         } catch (IOException e) {
@@ -228,7 +293,6 @@ public class ResponseBuilder {
         response.setStatusCode(code, message);
         response.setHeader("Content-Type", "text/html; charset=UTF-8");
 
-        // 1. Try error pages from server config
         if (errorPages != null && errorPages.containsKey(String.valueOf(code))) {
             String errorPagePath = errorPages.get(String.valueOf(code));
             File errorFile = new File(errorPagePath);
@@ -243,7 +307,6 @@ public class ResponseBuilder {
             }
         }
 
-        // 2. Fall back to default error_pages directory
         File errorFile = new File("./error_pages/" + code + ".html");
         if (errorFile.exists() && errorFile.isFile()) {
             try {
@@ -255,7 +318,6 @@ public class ResponseBuilder {
             }
         }
 
-        // 3. Hardcoded HTML fallback
         String fallbackBody = "<html><body><center><h1>" + code + " - " + message
                 + "</h1></center><hr><center>Custom Java Server</center></body></html>";
         response.setBody(fallbackBody.getBytes());

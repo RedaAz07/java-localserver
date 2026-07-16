@@ -208,7 +208,7 @@ uploads/test.txt
 Then:
 
 ```bash
-curl -X DELETE http://localhost:8080/uploads/test.txt
+curl -X DELETE http://localhost:8080/upload/test.txt
 ```
 
 Expected:
@@ -221,7 +221,7 @@ Expected:
 # 12. DELETE Missing File
 
 ```bash
-curl -X DELETE http://localhost:8080/uploads/notfound.txt
+curl -X DELETE http://localhost:8080/upload/notfound.txt
 ```
 
 Expected:

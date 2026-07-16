@@ -1,5 +1,6 @@
 package utils;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -12,8 +13,14 @@ public class HttpRequest {
 
     private byte[] body;
 
+    private Map<String, byte[]> uploadedFiles;
+
+    private Map<String, String> formFields;
+
     public HttpRequest() {
         this.headers = new HashMap<>();
+        this.uploadedFiles = new HashMap<>();
+        this.formFields = new HashMap<>();
     }
 
     public String getMethod() {
@@ -60,11 +67,152 @@ public class HttpRequest {
         this.body = body;
     }
 
+    public Map<String, byte[]> getUploadedFiles() {
+        return uploadedFiles;
+    }
+
+    public Map<String, String> getFormFields() {
+        return formFields;
+    }
+
     public HttpRequest(String method, String path, String version, Map<String, String> headers, byte[] body) {
         this.method = method;
         this.path = path;
         this.version = version;
         this.headers = headers != null ? headers : new HashMap<>();
         this.body = body;
+        this.uploadedFiles = new HashMap<>();
+        this.formFields = new HashMap<>();
+    }
+
+    public void parseMultipartBody() {
+        String contentType = this.getHeader("Content-Type");
+        if (contentType == null || !contentType.toLowerCase().contains("multipart/form-data")) {
+            return;
+        }
+
+        String boundary = extractBoundary(contentType);
+        if (boundary == null || body == null || body.length == 0) {
+            return;
+        }
+
+        byte[] boundaryBytes = ("--" + boundary).getBytes();
+        byte[] headerEnd = "\r\n\r\n".getBytes();
+
+        int pos = 0;
+        while (pos < body.length) {
+            int boundaryPos = findBytes(body, boundaryBytes, pos);
+            if (boundaryPos == -1) {
+                break;
+            }
+
+            int contentStart = boundaryPos + boundaryBytes.length;
+
+            if (contentStart + 1 < body.length
+                    && body[contentStart] == '-'
+                    && body[contentStart + 1] == '-') {
+                break;
+            }
+
+            if (contentStart + 1 < body.length
+                    && body[contentStart] == '\r'
+                    && body[contentStart + 1] == '\n') {
+                contentStart += 2;
+            }
+
+            int nextBoundary = findBytes(body, boundaryBytes, contentStart);
+            int contentEnd = (nextBoundary != -1) ? nextBoundary : body.length;
+
+            if (contentEnd >= 2
+                    && body[contentEnd - 2] == '\r'
+                    && body[contentEnd - 1] == '\n') {
+                contentEnd -= 2;
+            }
+
+            if (contentEnd <= contentStart) {
+                pos = (nextBoundary != -1) ? nextBoundary : body.length;
+                continue;
+            }
+
+            byte[] part = Arrays.copyOfRange(body, contentStart, contentEnd);
+
+            int partHeaderEnd = findBytes(part, headerEnd, 0);
+            if (partHeaderEnd != -1) {
+                byte[] partHeaderBytes = Arrays.copyOfRange(part, 0, partHeaderEnd);
+                String partHeaders = new String(partHeaderBytes);
+
+                String filename = extractContentDispositionParam(partHeaders, "filename");
+                String fieldName = extractContentDispositionParam(partHeaders, "name");
+
+                int partBodyStart = partHeaderEnd + 4;
+                byte[] partContent = Arrays.copyOfRange(part, partBodyStart, part.length);
+
+                if (filename != null && !filename.isEmpty()) {
+                    uploadedFiles.put(filename, partContent);
+                } else if (fieldName != null && !fieldName.isEmpty()) {
+                    formFields.put(fieldName, new String(partContent));
+                }
+            }
+
+            pos = (nextBoundary != -1) ? nextBoundary : body.length;
+        }
+    }
+
+    private String extractBoundary(String contentType) {
+        for (String part : contentType.split(";")) {
+            part = part.trim();
+            if (part.toLowerCase().startsWith("boundary=")) {
+                String boundary = part.substring("boundary=".length());
+                if (boundary.startsWith("\"") && boundary.endsWith("\"") && boundary.length() >= 2) {
+                    boundary = boundary.substring(1, boundary.length() - 1);
+                }
+                return boundary;
+            }
+        }
+        return null;
+    }
+    private String extractContentDispositionParam(String headers, String paramName) {
+        for (String line : headers.split("\r\n")) {
+            if (line.toLowerCase().startsWith("content-disposition:")) {
+                for (String part : line.split(";")) {
+                    part = part.trim();
+                    int eqIdx = part.indexOf('=');
+                    if (eqIdx == -1) continue;
+
+                    String key = part.substring(0, eqIdx).trim().toLowerCase();
+                    if (key.startsWith("content-disposition:")) {
+                        key = key.substring("content-disposition:".length()).trim();
+                    }
+
+                    if (key.equals(paramName)) {
+                        String value = part.substring(eqIdx + 1).trim();
+                        if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
+                            value = value.substring(1, value.length() - 1);
+                        }
+                        return value;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int findBytes(byte[] source, byte[] pattern, int offset) {
+        if (source == null || pattern == null || pattern.length == 0) {
+            return -1;
+        }
+        for (int i = offset; i <= source.length - pattern.length; i++) {
+            boolean found = true;
+            for (int j = 0; j < pattern.length; j++) {
+                if (source[i + j] != pattern[j]) {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) {
+                return i;
+            }
+        }
+        return -1;
     }
 }
