@@ -1,5 +1,6 @@
 package utils;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,6 +19,8 @@ public class HttpRequest {
     private Map<String, byte[]> uploadedFiles;
 
     private Map<String, String> formFields;
+
+    private Path bodyFilePath;
 
     public HttpRequest() {
         this.headers = new HashMap<>();
@@ -81,6 +84,18 @@ public class HttpRequest {
 
     public Map<String, String> getFormFields() {
         return formFields;
+    }
+
+    /**
+     * Path to a temp file containing the request body (used for streaming large
+     * uploads). Null if the body is stored in memory (getBody()).
+     */
+    public Path getBodyFilePath() {
+        return bodyFilePath;
+    }
+
+    public void setBodyFilePath(Path bodyFilePath) {
+        this.bodyFilePath = bodyFilePath;
     }
     /**}
      * Parse the "Cookie" request header into a list of Cookie objects.

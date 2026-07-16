@@ -3,12 +3,14 @@ package utils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Map;
+import java.util.UUID;
 
 public class ResponseBuilder {
 
     public static HttpResponse build(HttpRequest request, RouteConfig route) {
-        System.out.println("Building response for request: " + request.getMethod() + " " + request.getPath() + " " + request.getHeaders());
         HttpResponse response = new HttpResponse();
 
         if (route == null) {
@@ -80,14 +82,25 @@ public class ResponseBuilder {
         return buildErrorResponse(404, "Not Found", route.getErrorPages());
     }
 
+    /**
+     * Serve a file — uses memory for small files (< 1MB) and streaming for
+     * large files to avoid loading the entire file into RAM.
+     */
     private static HttpResponse serveFile(File file) {
         HttpResponse response = new HttpResponse();
         try {
-            byte[] fileContent = Files.readAllBytes(file.toPath());
-            response.setBody(fileContent);
-
+            long fileSize = file.length();
             String mimeType = MimeTypeUtil.getMimeType(file.getName());
             response.setHeader("Content-Type", mimeType);
+
+            if (fileSize < 1048576) {
+                // Small file: load into memory
+                byte[] fileContent = Files.readAllBytes(file.toPath());
+                response.setBody(fileContent);
+            } else {
+                // Large file: stream from disk
+                response.setFileBody(file.toPath(), fileSize);
+            }
 
             return response;
         } catch (IOException e) {
@@ -163,9 +176,19 @@ public class ResponseBuilder {
                 .replace("\"", "&quot;");
     }
 
-    private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
-        System.out.println("Handling POST request for: " + targetFile.getPath());
+    /**
+     * Extract file extension from a filename, including the dot.
+     * Returns "" if there is no extension.
+     */
+    private static String getFileExtension(String filename) {
+        int lastDot = filename.lastIndexOf('.');
+        if (lastDot == -1 || lastDot == filename.length() - 1) {
+            return "";
+        }
+        return filename.substring(lastDot); // includes the dot
+    }
 
+    private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
         File uploadDir = new File(route.getRoot());
         if (!uploadDir.exists()) {
             try {
@@ -196,12 +219,16 @@ public class ResponseBuilder {
                     String filename = entry.getKey();
                     byte[] fileContent = entry.getValue();
 
+                    // Extract original safe name for reporting
                     String safeName = new File(filename).getName();
-                    File outFile = new File(uploadDir, safeName);
+                    // Generate UUID-based filename to prevent overwrites
+                    String extension = getFileExtension(safeName);
+                    String medianame = UUID.randomUUID().toString() + extension;
+                    File outFile = new File(uploadDir, medianame);
 
                     Files.write(outFile.toPath(), fileContent);
                     System.out.println("Saved uploaded file: " + outFile.getAbsolutePath()
-                            + " (" + fileContent.length + " bytes)");
+                            + " (" + fileContent.length + " bytes) [original: " + safeName + "]");
 
                     if (savedFiles.length() > 0) {
                         savedFiles.append(", ");
@@ -216,6 +243,10 @@ public class ResponseBuilder {
                 return response;
 
             } else {
+                // --- Raw POST body upload ---
+                // If the body was streamed to a temp file, move it; otherwise write
+                // the in-memory body.
+
                 if (targetFile.isDirectory()) {
                     System.err.println("Upload failed: Cannot upload to a directory path without a filename");
                     return buildErrorResponse(400,
@@ -223,22 +254,38 @@ public class ResponseBuilder {
                             route.getErrorPages());
                 }
 
-                File parentDir = targetFile.getParentFile();
+                // Extract extension from the target filename and generate UUID name
+                String originalName = targetFile.getName();
+                String extension = getFileExtension(originalName);
+                String uuidName = UUID.randomUUID().toString() + extension;
+                File outFile = new File(uploadDir, uuidName);
+
+                File parentDir = outFile.getParentFile();
                 if (parentDir != null && !parentDir.exists()) {
                     Files.createDirectories(parentDir.toPath());
                 }
 
-                byte[] body = request.getBody();
-                if (body == null) {
-                    body = new byte[0];
+                Path bodyFilePath = request.getBodyFilePath();
+                if (bodyFilePath != null) {
+                    // Streamed upload — move temp file to final location (O(1) if same FS)
+                    Files.move(bodyFilePath, outFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("Saved streamed upload: " + outFile.getAbsolutePath()
+                            + " [original: " + originalName + "]");
+                } else {
+                    // Small in-memory upload
+                    byte[] body = request.getBody();
+                    if (body == null) {
+                        body = new byte[0];
+                    }
+                    Files.write(outFile.toPath(), body);
+                    System.out.println("Saved uploaded file: " + outFile.getAbsolutePath()
+                            + " (" + body.length + " bytes) [original: " + originalName + "]");
                 }
-
-                Files.write(targetFile.toPath(), body);
 
                 HttpResponse response = new HttpResponse();
                 response.setStatusCode(201, "Created");
                 response.setHeader("Content-Type", "text/plain; charset=UTF-8");
-                response.setBody(("File uploaded successfully: " + targetFile.getName()).getBytes());
+                response.setBody(("File uploaded successfully: " + originalName).getBytes());
                 return response;
             }
 
