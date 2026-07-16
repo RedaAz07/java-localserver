@@ -113,7 +113,8 @@ public class Server {
         buffer.get(data);
         state.buffer.write(data);
         byte[] allDataSoFar = state.buffer.toByteArray();
-System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Total collected so far: " + allDataSoFar.length + " bytes.");
+        System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Total collected so far: "
+                + allDataSoFar.length + " bytes.");
         if (!state.isHeadersParsed) {
             int headerEnd = RequestParser.findHeaderEndIndex(allDataSoFar);
 
@@ -150,9 +151,9 @@ System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Tota
         }
     }
 
-   private void sendResponse(SelectionKey key) throws IOException {
+    private void sendResponse(SelectionKey key) throws IOException {
         SocketChannel client = (SocketChannel) key.channel();
-        ClientState state = (ClientState) key.attachment(); 
+        ClientState state = (ClientState) key.attachment();
 
         if (state.responseBuffer != null) {
             client.write(state.responseBuffer);
@@ -171,7 +172,8 @@ System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Tota
             long contentLength = Long.parseLong(contentLengthStr);
             long limit = 5242880;
             if (state.matchedRoute != null) {
-                limit = state.matchedRoute.getClientBodyLimit()== null ? 520042880 : state.matchedRoute.getClientBodyLimit();
+                limit = state.matchedRoute.getClientBodyLimit() == null ? 520042880
+                        : state.matchedRoute.getClientBodyLimit();
             }
             if (contentLength > limit) {
                 System.err.println("Payload Too Large! Limit: " + limit + ", Requested: " + contentLength);

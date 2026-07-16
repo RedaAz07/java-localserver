@@ -14,7 +14,8 @@ public class RouteConfig {
     private String redirect;
     private Map<String, String> errorPages;
 
-    public RouteConfig(String path, String root, String default_file, List<String> methods, Boolean directory_listing, Long client_body_limit, List<String> cgi_extensions, String redirect, Map<String, String> errorPages) {
+    public RouteConfig(String path, String root, String default_file, List<String> methods, Boolean directory_listing,
+            Long client_body_limit, List<String> cgi_extensions, String redirect, Map<String, String> errorPages) {
         this.path = path;
         this.root = root;
         this.default_file = default_file;
@@ -26,13 +27,39 @@ public class RouteConfig {
         this.errorPages = errorPages;
     }
 
-    public String getPath() { return path; }
-    public String getRoot() { return root; }
-    public String getDefaultFile() { return default_file; }
-    public List<String> getMethods() { return methods; }
-    public Boolean getDirectoryListing() { return directory_listing; }
-    public Long getClientBodyLimit() { return client_body_limit; }
-    public List<String> getCgiExtensions() { return cgi_extensions; }
-    public String getRedirect() { return redirect; }
-    public Map<String, String> getErrorPages() { return errorPages; }
+    public String getPath() {
+        return path;
+    }
+
+    public String getRoot() {
+        return root;
+    }
+
+    public String getDefaultFile() {
+        return default_file;
+    }
+
+    public List<String> getMethods() {
+        return methods;
+    }
+
+    public Boolean getDirectoryListing() {
+        return directory_listing;
+    }
+
+    public Long getClientBodyLimit() {
+        return client_body_limit;
+    }
+
+    public List<String> getCgiExtensions() {
+        return cgi_extensions;
+    }
+
+    public String getRedirect() {
+        return redirect;
+    }
+
+    public Map<String, String> getErrorPages() {
+        return errorPages;
+    }
 }

@@ -123,15 +123,18 @@ public class ResponseBuilder {
         // Parent directory link (if not at root)
         if (!relativePath.equals("/") && !relativePath.isEmpty()) {
             String parentPath = relativePath.substring(0, relativePath.lastIndexOf('/'));
-            if (parentPath.isEmpty()) parentPath = "/";
+            if (parentPath.isEmpty())
+                parentPath = "/";
             html.append("<a href=\"").append(escapeHtml(parentPath)).append("\" class=\"dir\">../</a>\n");
         }
 
         File[] files = dir.listFiles();
         if (files != null) {
             java.util.Arrays.sort(files, (a, b) -> {
-                if (a.isDirectory() && !b.isDirectory()) return -1;
-                if (!a.isDirectory() && b.isDirectory()) return 1;
+                if (a.isDirectory() && !b.isDirectory())
+                    return -1;
+                if (!a.isDirectory() && b.isDirectory())
+                    return 1;
                 return a.getName().compareToIgnoreCase(b.getName());
             });
 
@@ -140,7 +143,8 @@ public class ResponseBuilder {
                 String cssClass = f.isDirectory() ? "dir" : "file";
                 String suffix = f.isDirectory() ? "/" : "";
                 html.append("<a href=\"upload").append(escapeHtml(relativePath));
-                if (!relativePath.endsWith("/")) html.append("/");
+                if (!relativePath.endsWith("/"))
+                    html.append("/");
                 html.append(escapeHtml(name)).append(suffix).append("\" class=\"").append(cssClass).append("\">");
                 html.append(escapeHtml(name)).append(suffix).append("</a>\n");
             }
@@ -155,7 +159,8 @@ public class ResponseBuilder {
     }
 
     private static String escapeHtml(String input) {
-        if (input == null) return "";
+        if (input == null)
+            return "";
         return input
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")

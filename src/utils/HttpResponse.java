@@ -1,4 +1,5 @@
 package utils;
+
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
@@ -26,11 +27,11 @@ public class HttpResponse {
     public ByteBuffer toByteBuffer() {
         StringBuilder responseString = new StringBuilder();
         responseString.append("HTTP/1.1 ").append(statusCode).append(" ").append(statusMessage).append("\r\n");
-        
+
         for (Map.Entry<String, String> header : headers.entrySet()) {
             responseString.append(header.getKey()).append(": ").append(header.getValue()).append("\r\n");
         }
-        
+
         responseString.append("\r\n");
 
         byte[] headerBytes = responseString.toString().getBytes();
@@ -38,7 +39,7 @@ public class HttpResponse {
         buffer.put(headerBytes);
         buffer.put(body);
         buffer.flip();
-        
+
         return buffer;
     }
 }
