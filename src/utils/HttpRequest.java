@@ -1,7 +1,9 @@
 package utils;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class HttpRequest {
@@ -56,7 +58,13 @@ public class HttpRequest {
     }
 
     public String getHeader(String key) {
-        return this.headers.get(key);
+        // Case-insensitive lookup (HTTP headers are case-insensitive)
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     public byte[] getBody() {
@@ -73,6 +81,37 @@ public class HttpRequest {
 
     public Map<String, String> getFormFields() {
         return formFields;
+    /**
+     * Parse the "Cookie" request header into a list of Cookie objects.
+     */
+    public List<Cookie> getCookies() {
+        List<Cookie> cookies = new ArrayList<>();
+        String cookieHeader = getHeader("Cookie");
+        if (cookieHeader == null || cookieHeader.isEmpty()) {
+            return cookies;
+        }
+        String[] parts = cookieHeader.split(";");
+        for (String part : parts) {
+            String trimmed = part.trim();
+            int eqIdx = trimmed.indexOf('=');
+            if (eqIdx == -1) continue;
+            String name = trimmed.substring(0, eqIdx).trim();
+            String value = trimmed.substring(eqIdx + 1).trim();
+            cookies.add(new Cookie(name, value));
+        }
+        return cookies;
+    }
+
+    /**
+     * Get a single cookie by name from the request, or null if not found.
+     */
+    public Cookie getCookie(String name) {
+        for (Cookie c : getCookies()) {
+            if (c.getName().equals(name)) {
+                return c;
+            }
+        }
+        return null;
     }
 
     public HttpRequest(String method, String path, String version, Map<String, String> headers, byte[] body) {
