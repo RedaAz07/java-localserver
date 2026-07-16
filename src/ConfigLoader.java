@@ -246,7 +246,7 @@ public class ConfigLoader {
                     List<String> cgiExtensions = (List<String>) routeMap.get("cgi_extensions");
 
                     RouteConfig routeConfig = new RouteConfig(path, root, defaultFile, methods, directoryListing,
-                            clientBodyLimitRoute, cgiExtensions, redirect);
+                            clientBodyLimitRoute, cgiExtensions, redirect, errorPages);
 
                     routes.add(routeConfig);
 

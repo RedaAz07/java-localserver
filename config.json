@@ -25,7 +25,8 @@
           "path": "/upload",
           "root": "uploads",
           "methods": ["GET", "POST", "DELETE"],
-          "client_body_limit": 21474836480
+          "client_body_limit": 21474836480,
+          "directory_listing": true
         },
         {
           "path": "/add",

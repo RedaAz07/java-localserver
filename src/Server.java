@@ -8,6 +8,7 @@ import java.nio.channels.SocketChannel;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import utils.ClientState;
 import utils.HttpRequest;
@@ -138,7 +139,8 @@ System.out.println("NIO Read: Got+++++++++++++++++ " + bytesRead + " bytes. Tota
             HttpResponse response;
 
             if (state.isError) {
-                response = ResponseBuilder.buildErrorResponse(413, "Payload Too Large");
+                Map<String, String> errorPages = state.matchedRoute != null ? state.matchedRoute.getErrorPages() : null;
+                response = ResponseBuilder.buildErrorResponse(413, "Payload Too Large", errorPages);
             } else {
                 response = ResponseBuilder.build(state.request, state.matchedRoute);
             }
