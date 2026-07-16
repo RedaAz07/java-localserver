@@ -81,7 +81,8 @@ public class HttpRequest {
 
     public Map<String, String> getFormFields() {
         return formFields;
-    /**
+    }
+    /**}
      * Parse the "Cookie" request header into a list of Cookie objects.
      */
     public List<Cookie> getCookies() {
