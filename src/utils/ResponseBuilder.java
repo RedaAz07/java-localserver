@@ -7,8 +7,10 @@ import java.util.Map;
 
 public class ResponseBuilder {
 
+    public static CgiExecutor cgiExecutor;
+
     public static HttpResponse build(HttpRequest request, RouteConfig route) {
-        System.out.println("Building response for request: " + request.getMethod() + " " + request.getPath() + " " + request.getHeaders());
+        System.out.println("Building response for: " + request);
         HttpResponse response = new HttpResponse();
 
         if (route == null) {
@@ -27,7 +29,15 @@ public class ResponseBuilder {
             return response;
         }
 
-        String relativePath = request.getPath().substring(route.getPath().length());
+        String fullPath = request.getPath();
+        String queryString = "";
+        int qIdx = fullPath.indexOf('?');
+        if (qIdx != -1) {
+            queryString = fullPath.substring(qIdx + 1);
+            fullPath = fullPath.substring(0, qIdx);
+        }
+
+        String relativePath = fullPath.substring(route.getPath().length());
         if (!relativePath.startsWith("/")) {
             relativePath = "/" + relativePath;
         }
@@ -45,6 +55,14 @@ public class ResponseBuilder {
             return buildErrorResponse(500, "Internal Server Error", route.getErrorPages());
         }
 
+        if (isCgiRequest(route, targetFile)) {
+            try {
+                return cgiExecutor.handle(request, targetFile, fullPath, queryString);
+            } catch (Exception e) {
+                return buildErrorResponse(500, "Internal Server Error", route.getErrorPages());
+            }
+        }
+
         if ("POST".equals(request.getMethod())) {
             return handlePost(request, route, targetFile);
         }
@@ -54,6 +72,22 @@ public class ResponseBuilder {
         }
 
         return handleGet(route, targetFile, relativePath);
+    }
+
+    private static boolean isCgiRequest(RouteConfig route, File targetFile) {
+        if (route.getCgiExtensions() == null || route.getCgiExtensions().isEmpty()) {
+            return false;
+        }
+        if (!targetFile.isFile()) {
+            return false;
+        }
+        String name = targetFile.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot == -1) {
+            return false;
+        }
+        String ext = name.substring(dot);
+        return route.getCgiExtensions().contains(ext);
     }
 
     private static HttpResponse handleGet(RouteConfig route, File targetFile, String relativePath) {

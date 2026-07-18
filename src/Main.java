@@ -1,9 +1,13 @@
 
 import java.util.List;
+
+import utils.ResponseBuilder;
 import utils.ServerConfig;
 
 public class Main {
     public static void main(String[] args) {
+        ResponseBuilder.cgiExecutor = CGIHandler::handle;
+
         ConfigLoader configLoader = new ConfigLoader("config.json");
         configLoader.GlobalFormat();
         try {

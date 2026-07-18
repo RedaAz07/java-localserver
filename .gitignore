@@ -1,4 +1,4 @@
-.gitignore
-claude.sh
 /out
 /uploads
+claude.sh
+cl.sh

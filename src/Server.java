@@ -73,13 +73,21 @@ public class Server {
                 if (!key.isValid()) {
                     continue;
                 }
-
-                if (key.isAcceptable()) {
-                    acceptConnection(key);
-                } else if (key.isReadable()) {
-                    readRequest(key, buffer);
-                } else if (key.isWritable()) {
-                    sendResponse(key);
+                try {
+                    if (key.isAcceptable()) {
+                        acceptConnection(key);
+                    } else if (key.isReadable()) {
+                        readRequest(key, buffer);
+                    } else if (key.isWritable()) {
+                        sendResponse(key);
+                    }
+                } catch (IOException e) {
+                    System.err.println("Client disconnected abruptly: " + e.getMessage());
+                    key.cancel();
+                    try {
+                        key.channel().close();
+                    } catch (IOException ex) {
+                    }
                 }
             }
 
@@ -123,13 +131,18 @@ public class Server {
             if (headerEnd != -1) {
                 state.headerLength = headerEnd;
                 HttpRequest parsedReq = RequestParser.parseRequest(allDataSoFar);
-                System.out.println("Parsed Request: " + parsedReq.getHeader("Content-Length"));
                 if (parsedReq != null) {
                     state.request = parsedReq;
                     state.isHeadersParsed = true;
 
                     state.matchedRoute = Router.matchRoute(state.request.getPath(), routeConfigs);
                     checkBodyLimit(state);
+                } else {
+                    state.isError = true;
+                    state.errorCode = 400;
+                    state.errorMessage = "Bad Request";
+                    state.isHeadersParsed = true;
+                    state.isRequestComplete = true;
                 }
             }
         }
@@ -143,17 +156,19 @@ public class Server {
 
             if (state.isError) {
                 Map<String, String> errorPages = state.matchedRoute != null ? state.matchedRoute.getErrorPages() : null;
-                response = ResponseBuilder.buildErrorResponse(413, "Payload Too Large", errorPages);
+                response = ResponseBuilder.buildErrorResponse(state.errorCode, state.errorMessage, errorPages);
             } else {
                 response = ResponseBuilder.build(state.request, state.matchedRoute);
             }
 
             // --- session handling ---
-            state.session = Session.fromRequest(state.request);
-            if (state.session == null) {
-                state.session = Session.create();
+            if (state.request != null) {
+                state.session = Session.fromRequest(state.request);
+                if (state.session == null) {
+                    state.session = Session.create();
+                }
+                response.addSetCookie(state.session.toCookie());
             }
-            response.addSetCookie(state.session.toCookie());
 
             state.responseBuffer = response.toByteBuffer();
             key.interestOps(SelectionKey.OP_WRITE);
@@ -181,11 +196,13 @@ public class Server {
             long contentLength = Long.parseLong(contentLengthStr);
             long limit = Reqlimit;
             if (state.matchedRoute != null) {
-                limit = state.matchedRoute.getClientBodyLimit()== null ? Reqlimit : state.matchedRoute.getClientBodyLimit();
+                limit = state.matchedRoute.getClientBodyLimit() == null ? Reqlimit
+                        : state.matchedRoute.getClientBodyLimit();
             }
             if (contentLength > limit) {
-                System.err.println("Payload Too Large! Limit: " + limit + ", Requested: " + contentLength);
                 state.isError = true;
+                state.errorCode = 413;
+                state.errorMessage = "Payload Too Large";
                 state.isRequestComplete = true;
             }
         }
@@ -201,16 +218,24 @@ public class Server {
             int currentBodySize = allDataSoFar.length - state.headerLength;
 
             if (currentBodySize >= expectedBodySize) {
-                System.out.println("*****************************" + contentLengthStr);
                 state.isRequestComplete = true;
 
                 byte[] completeBody = Arrays.copyOfRange(allDataSoFar, state.headerLength, allDataSoFar.length);
                 state.request.setBody(completeBody);
             }
         } else if ("chunked".equals(state.request.getHeader("Transfer-Encoding"))) {
-            String dataStr = new String(allDataSoFar);
-            if (dataStr.endsWith("0\r\n\r\n")) {
+            int len = allDataSoFar.length;
+            if (len >= 5 &&
+                    allDataSoFar[len - 5] == '0' &&
+                    allDataSoFar[len - 4] == '\r' &&
+                    allDataSoFar[len - 3] == '\n' &&
+                    allDataSoFar[len - 2] == '\r' &&
+                    allDataSoFar[len - 1] == '\n') {
+
                 state.isRequestComplete = true;
+
+                byte[] completeBody = Arrays.copyOfRange(allDataSoFar, state.headerLength, allDataSoFar.length);
+                state.request.setBody(completeBody);
             }
         } else {
             state.isRequestComplete = true;
