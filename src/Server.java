@@ -62,7 +62,7 @@ public class Server {
         ByteBuffer buffer = ByteBuffer.allocate(1024);
 
         while (true) {
-            selector.select(1000);
+            selector.select();
 
             Iterator<SelectionKey> keys = selector.selectedKeys().iterator();
 
