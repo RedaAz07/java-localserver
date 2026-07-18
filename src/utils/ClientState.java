@@ -1,7 +1,9 @@
 package utils;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 
 public class ClientState {
     public ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -15,4 +17,8 @@ public class ClientState {
     public ByteBuffer responseBuffer = null;
     public int errorCode = 0;
     public String errorMessage = "";
+
+    public File tempFile = null;
+    public FileChannel fileChannel = null;
+    public long bytesWritten = 0;
 }

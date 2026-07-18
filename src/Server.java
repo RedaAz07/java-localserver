@@ -83,6 +83,18 @@ public class Server {
                     }
                 } catch (IOException e) {
                     System.err.println("Client disconnected abruptly: " + e.getMessage());
+                    ClientState state = (ClientState) key.attachment();
+                    if (state != null) {
+                        try {
+                            if (state.fileChannel != null)
+                                state.fileChannel.close();
+                        } catch (Exception ex) {
+                        }
+
+                        if (state.tempFile != null && state.tempFile.exists()) {
+                            state.tempFile.delete(); 
+                        }
+                    }
                     key.cancel();
                     try {
                         key.channel().close();
@@ -119,24 +131,42 @@ public class Server {
         }
 
         buffer.flip();
-        byte[] data = new byte[buffer.limit()];
-        buffer.get(data);
-        state.buffer.write(data);
-        byte[] allDataSoFar = state.buffer.toByteArray();
-        System.out.println("Received data: " + new String(allDataSoFar));
 
         if (!state.isHeadersParsed) {
-            int headerEnd = RequestParser.findHeaderEndIndex(allDataSoFar);
+            byte[] chunk = new byte[buffer.limit()];
+            buffer.get(chunk);
+            state.buffer.write(chunk);
+            byte[] dataSoFar = state.buffer.toByteArray();
+
+            int headerEnd = RequestParser.findHeaderEndIndex(dataSoFar);
 
             if (headerEnd != -1) {
                 state.headerLength = headerEnd;
-                HttpRequest parsedReq = RequestParser.parseRequest(allDataSoFar);
+                HttpRequest parsedReq = RequestParser.parseRequest(dataSoFar);
+
                 if (parsedReq != null) {
                     state.request = parsedReq;
                     state.isHeadersParsed = true;
-
                     state.matchedRoute = Router.matchRoute(state.request.getPath(), routeConfigs);
                     checkBodyLimit(state);
+
+                    if (!state.isError) {
+                        java.io.File tempDir = new java.io.File("./temp_uploads");
+                        if (!tempDir.exists()) {
+                            tempDir.mkdirs();
+                        }
+                        state.tempFile = java.io.File.createTempFile("upload_", ".tmp", tempDir);
+                        state.fileChannel = new java.io.FileOutputStream(state.tempFile).getChannel();
+                        state.tempFile.deleteOnExit();
+                        int bodyPartLength = dataSoFar.length - headerEnd;
+                        if (bodyPartLength > 0) {
+                            ByteBuffer bodyPart = ByteBuffer.wrap(dataSoFar, headerEnd, bodyPartLength);
+                            state.fileChannel.write(bodyPart);
+                            state.bytesWritten += bodyPartLength;
+                        }
+
+                        state.buffer.reset();
+                    }
                 } else {
                     state.isError = true;
                     state.errorCode = 400;
@@ -145,10 +175,15 @@ public class Server {
                     state.isRequestComplete = true;
                 }
             }
+        } else {
+            if (!state.isError && state.fileChannel != null) {
+                state.fileChannel.write(buffer);
+                state.bytesWritten += bytesRead;
+            }
         }
 
         if (state.isHeadersParsed && !state.isRequestComplete) {
-            checkIfBodyIsComplete(state, allDataSoFar);
+            checkIfBodyIsComplete(state);
         }
 
         if (state.isRequestComplete) {
@@ -158,6 +193,7 @@ public class Server {
                 Map<String, String> errorPages = state.matchedRoute != null ? state.matchedRoute.getErrorPages() : null;
                 response = ResponseBuilder.buildErrorResponse(state.errorCode, state.errorMessage, errorPages);
             } else {
+                state.request.addHeader("Temp-File-Path", state.tempFile.getAbsolutePath());
                 response = ResponseBuilder.build(state.request, state.matchedRoute);
             }
 
@@ -208,34 +244,33 @@ public class Server {
         }
     }
 
-    private void checkIfBodyIsComplete(ClientState state, byte[] allDataSoFar) {
+    private void checkIfBodyIsComplete(ClientState state) {
         if (state.isError)
             return;
 
         String contentLengthStr = state.request.getHeader("Content-Length");
         if (contentLengthStr != null) {
             long expectedBodySize = Long.parseLong(contentLengthStr);
-            int currentBodySize = allDataSoFar.length - state.headerLength;
 
-            if (currentBodySize >= expectedBodySize) {
+            if (state.bytesWritten >= expectedBodySize) {
                 state.isRequestComplete = true;
 
-                byte[] completeBody = Arrays.copyOfRange(allDataSoFar, state.headerLength, allDataSoFar.length);
-                state.request.setBody(completeBody);
+                try {
+                    if (state.fileChannel != null) {
+                        state.fileChannel.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
         } else if ("chunked".equals(state.request.getHeader("Transfer-Encoding"))) {
-            int len = allDataSoFar.length;
-            if (len >= 5 &&
-                    allDataSoFar[len - 5] == '0' &&
-                    allDataSoFar[len - 4] == '\r' &&
-                    allDataSoFar[len - 3] == '\n' &&
-                    allDataSoFar[len - 2] == '\r' &&
-                    allDataSoFar[len - 1] == '\n') {
 
-                state.isRequestComplete = true;
-
-                byte[] completeBody = Arrays.copyOfRange(allDataSoFar, state.headerLength, allDataSoFar.length);
-                state.request.setBody(completeBody);
+            state.isRequestComplete = true;
+            try {
+                if (state.fileChannel != null)
+                    state.fileChannel.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         } else {
             state.isRequestComplete = true;
