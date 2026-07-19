@@ -23,6 +23,7 @@ public class Server {
     private final List<ServerConfig> serverConfigs;
     private List<RouteConfig> routeConfigs;
     private Selector selector;
+    private static final long MEMORY_THRESHOLD = 2 * 1024 * 1024;
     private static final int Reqlimit = 5242880; // 5MB
     private static final long IDLE_TIMEOUT_MILLIS = 30000;
 
@@ -95,8 +96,11 @@ public class Server {
                         } catch (Exception ex) {
                         }
 
-                        if (state.tempFile != null && state.tempFile.exists()) {
-                            state.tempFile.delete();
+                        if (state.tempFilePath != null) {
+                            try {
+                                java.nio.file.Files.deleteIfExists(state.tempFilePath);
+                            } catch (Exception ee) {
+                            }
                         }
                     }
                     key.cancel();
@@ -133,10 +137,12 @@ public class Server {
                     } catch (Exception e) {
                     }
 
-                    if (state.tempFile != null && state.tempFile.exists()) {
-                        state.tempFile.delete();
+                    if (state.tempFilePath != null) {
+                        try {
+                            java.nio.file.Files.deleteIfExists(state.tempFilePath);
+                        } catch (Exception e) {
+                        }
                     }
-
                     key.cancel();
                     try {
                         key.channel().close();
@@ -179,6 +185,7 @@ public class Server {
         buffer.flip();
 
         if (!state.isHeadersParsed) {
+            // باقين فـ مرحلة الـ Headers، كنقراو للميموار باش نقلبو على \r\n\r\n
             byte[] chunk = new byte[buffer.limit()];
             buffer.get(chunk);
             state.buffer.write(chunk);
@@ -197,21 +204,37 @@ public class Server {
                     checkBodyLimit(state);
 
                     if (!state.isError) {
-                        java.io.File tempDir = new java.io.File("./temp_uploads");
-                        if (!tempDir.exists()) {
-                            tempDir.mkdirs();
-                        }
-                        state.tempFile = java.io.File.createTempFile("upload_", ".tmp", tempDir);
-                        state.fileChannel = new java.io.FileOutputStream(state.tempFile).getChannel();
-                        state.tempFile.deleteOnExit();
-                        int bodyPartLength = dataSoFar.length - headerEnd;
-                        if (bodyPartLength > 0) {
-                            ByteBuffer bodyPart = ByteBuffer.wrap(dataSoFar, headerEnd, bodyPartLength);
-                            state.fileChannel.write(bodyPart);
-                            state.bytesWritten += bodyPartLength;
+                        // ⬅️ هنا كيبدا التفكير ديال الـ Hybrid ➡️
+                        long contentLength = 0;
+                        String clStr = state.request.getHeader("Content-Length");
+                        if (clStr != null) {
+                            contentLength = Long.parseLong(clStr);
                         }
 
-                        state.buffer.reset();
+                        int bodyPartLength = dataSoFar.length - headerEnd;
+
+                        if (contentLength > MEMORY_THRESHOLD) {
+                            // 🔴 الطلب كبير (> 2MB): نخدمو بالديسك (Streaming)
+                            state.useDisk = true;
+                            java.nio.file.Path tempDir = java.nio.file.Paths.get("./temp_uploads");
+                            if (!java.nio.file.Files.exists(tempDir)) {
+                                java.nio.file.Files.createDirectories(tempDir);
+                            }
+                            state.tempFilePath = java.nio.file.Files.createTempFile(tempDir, "upload_", ".tmp");
+                            state.fileChannel = java.nio.channels.FileChannel.open(state.tempFilePath,
+                                    java.nio.file.StandardOpenOption.WRITE);
+
+                            if (bodyPartLength > 0) {
+                                ByteBuffer bodyPart = ByteBuffer.wrap(dataSoFar, headerEnd, bodyPartLength);
+                                state.fileChannel.write(bodyPart);
+                                state.bytesWritten += bodyPartLength;
+                            }
+                            state.buffer.reset(); // نخويو الـ RAM
+                        } else {
+                            // 🟢 الطلب صغير (<= 2MB): نخليوه فـ الـ RAM
+                            state.useDisk = false;
+                            // ما كانديرو والو حيت الداتا ديجا راها فـ state.buffer !
+                        }
                     }
                 } else {
                     state.isError = true;
@@ -222,9 +245,18 @@ public class Server {
                 }
             }
         } else {
-            if (!state.isError && state.fileChannel != null) {
-                state.fileChannel.write(buffer);
-                state.bytesWritten += bytesRead;
+            // مرحلة قراءة باقي الـ Body
+            if (!state.isError) {
+                if (state.useDisk && state.fileChannel != null) {
+                    // 🔴 كنكبو فالديسك
+                    state.fileChannel.write(buffer);
+                    state.bytesWritten += bytesRead;
+                } else if (!state.useDisk) {
+                    // 🟢 كنكملو نجمعو فـ الـ RAM
+                    byte[] chunk = new byte[buffer.limit()];
+                    buffer.get(chunk);
+                    state.buffer.write(chunk);
+                }
             }
         }
 
@@ -239,7 +271,16 @@ public class Server {
                 Map<String, String> errorPages = state.matchedRoute != null ? state.matchedRoute.getErrorPages() : null;
                 response = ResponseBuilder.buildErrorResponse(state.errorCode, state.errorMessage, errorPages);
             } else {
-                state.request.addHeader("Temp-File-Path", state.tempFile.getAbsolutePath());
+                if (state.useDisk) {
+                    state.request.addHeader("Temp-File-Path", state.tempFilePath.toString());
+                } else {
+                    byte[] allData = state.buffer.toByteArray();
+                    if (allData.length > state.headerLength) {
+                        byte[] completeBody = Arrays.copyOfRange(allData, state.headerLength, allData.length);
+                        state.request.setBody(completeBody);
+                        state.request.parseMultipartBody(); 
+                    }
+                }
                 response = ResponseBuilder.build(state.request, state.matchedRoute);
             }
 
@@ -248,6 +289,8 @@ public class Server {
                 state.session = Session.fromRequest(state.request);
                 if (state.session == null) {
                     state.session = Session.create();
+                } else {
+                    state.session.touch();
                 }
                 response.addSetCookie(state.session.toCookie());
             }
@@ -264,7 +307,16 @@ public class Server {
         if (state.responseBuffer != null) {
             client.write(state.responseBuffer);
             state.lastActivityMillis = System.currentTimeMillis();
+
             if (!state.responseBuffer.hasRemaining()) {
+
+                if (state.tempFilePath != null) {
+                    try {
+                        java.nio.file.Files.deleteIfExists(state.tempFilePath);
+                    } catch (Exception e) {
+                    }
+                }
+
                 key.attach(new ClientState());
                 key.interestOps(SelectionKey.OP_READ);
             }
@@ -298,25 +350,30 @@ public class Server {
         if (contentLengthStr != null) {
             long expectedBodySize = Long.parseLong(contentLengthStr);
 
-            if (state.bytesWritten >= expectedBodySize) {
+            // ⬅️ الحساب كيتبدل على حساب واش ديسك ولا RAM
+            long currentBodySize = state.useDisk ? state.bytesWritten : (state.buffer.size() - state.headerLength);
+
+            if (currentBodySize >= expectedBodySize) {
                 state.isRequestComplete = true;
 
-                try {
-                    if (state.fileChannel != null) {
-                        state.fileChannel.close();
+                if (state.useDisk) {
+                    try {
+                        if (state.fileChannel != null) {
+                            state.fileChannel.close();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
                     }
-                } catch (IOException e) {
-                    e.printStackTrace();
                 }
             }
         } else if ("chunked".equals(state.request.getHeader("Transfer-Encoding"))) {
-
             state.isRequestComplete = true;
-            try {
-                if (state.fileChannel != null)
-                    state.fileChannel.close();
-            } catch (IOException e) {
-                e.printStackTrace();
+            if (state.useDisk) {
+                try {
+                    if (state.fileChannel != null)
+                        state.fileChannel.close();
+                } catch (IOException e) {
+                }
             }
         } else {
             state.isRequestComplete = true;

@@ -3,6 +3,7 @@ package utils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.Map;
 
 public class ResponseBuilder {
@@ -197,7 +198,7 @@ public class ResponseBuilder {
                 .replace("\"", "&quot;");
     }
 
-    private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
+   private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
         System.out.println("Handling POST request for: " + targetFile.getPath());
 
         File uploadDir = new File(route.getRoot());
@@ -217,37 +218,63 @@ public class ResponseBuilder {
 
         try {
             if (isMultipart) {
-                request.parseMultipartBody();
-                Map<String, byte[]> uploadedFiles = request.getUploadedFiles();
+                String tempFilePath = request.getHeader("Temp-File-Path");
 
-                if (uploadedFiles.isEmpty()) {
-                    System.err.println("Upload failed: No files found in multipart body");
-                    return buildErrorResponse(400, "Bad Request - No files found in upload", route.getErrorPages());
-                }
+               if (tempFilePath != null) {
+                    System.out.println("📦 Handling LARGE files via Disk Scanner...");
+                    
+                    List<String> uploadedNames = MultipartHandler.extractUploadedFiles(request, uploadDir.getAbsolutePath());
+                    System.out.println(uploadedNames + "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
 
-                StringBuilder savedFiles = new StringBuilder();
-                for (Map.Entry<String, byte[]> entry : uploadedFiles.entrySet()) {
-                    String filename = entry.getKey();
-                    byte[] fileContent = entry.getValue();
-
-                    String safeName = new File(filename).getName();
-                    File outFile = new File(uploadDir, safeName);
-
-                    Files.write(outFile.toPath(), fileContent);
-                    System.out.println("Saved uploaded file: " + outFile.getAbsolutePath()
-                            + " (" + fileContent.length + " bytes)");
-
-                    if (savedFiles.length() > 0) {
-                        savedFiles.append(", ");
+                    if (!uploadedNames.isEmpty()) {
+                        String responseMessage = "Large File(s) uploaded successfully: " + String.join(", ", uploadedNames);
+                        
+                        HttpResponse response = new HttpResponse();
+                        response.setStatusCode(201, "Created");
+                        response.setHeader("Content-Type", "text/plain; charset=UTF-8");
+                        response.setBody(responseMessage.getBytes());
+                        return response;
+                    } else {
+                        return buildErrorResponse(400, "Bad Request - Upload extraction failed or no files found", route.getErrorPages());
                     }
-                    savedFiles.append(safeName);
-                }
 
-                HttpResponse response = new HttpResponse();
-                response.setStatusCode(201, "Created");
-                response.setHeader("Content-Type", "text/plain; charset=UTF-8");
-                response.setBody(("File(s) uploaded successfully: " + savedFiles.toString()).getBytes());
-                return response;
+                } else {
+                    System.out.println("📄 Handling SMALL file via RAM...");
+                    
+                    request.parseMultipartBody();
+                    Map<String, byte[]> uploadedFiles = request.getUploadedFiles();
+
+                    if (uploadedFiles.isEmpty()) {
+                        System.err.println("Upload failed: No files found in multipart body");
+                        return buildErrorResponse(400, "Bad Request - No files found in upload", route.getErrorPages());
+                    }
+
+                    StringBuilder savedFiles = new StringBuilder();
+                    for (Map.Entry<String, byte[]> entry : uploadedFiles.entrySet()) {
+                        String filename = entry.getKey();
+                        byte[] fileContent = entry.getValue();
+
+                        String safeName = new File(filename).getName();
+                        
+                        String uniqueName = java.util.UUID.randomUUID().toString() + "_" + safeName;
+                        File outFile = new File(uploadDir, uniqueName);
+
+                        Files.write(outFile.toPath(), fileContent);
+                        System.out.println("Saved uploaded file: " + outFile.getAbsolutePath()
+                                + " (" + fileContent.length + " bytes)");
+
+                        if (savedFiles.length() > 0) {
+                            savedFiles.append(", ");
+                        }
+                        savedFiles.append(uniqueName);
+                    }
+
+                    HttpResponse response = new HttpResponse();
+                    response.setStatusCode(201, "Created");
+                    response.setHeader("Content-Type", "text/plain; charset=UTF-8");
+                    response.setBody(("File(s) uploaded successfully: " + savedFiles.toString()).getBytes());
+                    return response;
+                }
 
             } else {
                 if (targetFile.isDirectory()) {
