@@ -21,7 +21,7 @@ public class ServerConfig {
         this.routes = routes;
     }
 
-    // Getters
+    
     public String getHost() {
         return host;
     }

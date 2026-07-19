@@ -27,9 +27,6 @@ public class HttpResponse {
         setHeader("Content-Length", String.valueOf(body.length));
     }
 
-    /**
-     * Add a Set-Cookie header to the response (multiple cookies can be set).
-     */
     public void addSetCookie(Cookie cookie) {
         setCookies.add(cookie);
     }

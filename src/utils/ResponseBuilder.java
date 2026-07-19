@@ -133,11 +133,26 @@ public class ResponseBuilder {
     private static HttpResponse generateDirectoryListing(File dir, String relativePath, RouteConfig route) {
         HttpResponse response = new HttpResponse();
         response.setHeader("Content-Type", "text/html; charset=UTF-8");
+        String basePath = route.getPath();
+        if (basePath == null)
+            basePath = "";
+
+        if (basePath.endsWith("/") && relativePath.startsWith("/")) {
+            basePath += relativePath.substring(1);
+        } else if (!basePath.endsWith("/") && !relativePath.startsWith("/")) {
+            basePath += "/" + relativePath;
+        } else {
+            basePath += relativePath;
+        }
+
+        if (!basePath.endsWith("/")) {
+            basePath += "/";
+        }
 
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>\n<html>\n<head>\n");
         html.append("<meta charset=\"UTF-8\">\n");
-        html.append("<title>Index of ").append(escapeHtml(relativePath)).append("</title>\n");
+        html.append("<title>Index of ").append(escapeHtml(basePath)).append("</title>\n");
         html.append("<style>\n");
         html.append("body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }\n");
         html.append("h1 { border-bottom: 1px solid #444; padding-bottom: 10px; }\n");
@@ -148,13 +163,12 @@ public class ResponseBuilder {
         html.append("pre { line-height: 1.6; }\n");
         html.append("</style>\n</head>\n<body>\n");
 
-        html.append("<h1>Index of ").append(escapeHtml(relativePath)).append("</h1>\n");
+        html.append("<h1>Index of ").append(escapeHtml(basePath)).append("</h1>\n");
         html.append("<hr>\n<pre>\n");
 
         if (!relativePath.equals("/") && !relativePath.isEmpty()) {
-            String parentPath = relativePath.substring(0, relativePath.lastIndexOf('/'));
-            if (parentPath.isEmpty())
-                parentPath = "/";
+            int lastSlashPos = basePath.lastIndexOf('/', basePath.length() - 2);
+            String parentPath = (lastSlashPos >= 0) ? basePath.substring(0, lastSlashPos + 1) : "/";
             html.append("<a href=\"").append(escapeHtml(parentPath)).append("\" class=\"dir\">../</a>\n");
         }
 
@@ -172,10 +186,9 @@ public class ResponseBuilder {
                 String name = f.getName();
                 String cssClass = f.isDirectory() ? "dir" : "file";
                 String suffix = f.isDirectory() ? "/" : "";
-                html.append("<a href=\"upload").append(escapeHtml(relativePath));
-                if (!relativePath.endsWith("/"))
-                    html.append("/");
-                html.append(escapeHtml(name)).append(suffix).append("\" class=\"").append(cssClass).append("\">");
+
+                html.append("<a href=\"").append(escapeHtml(basePath)).append(escapeHtml(name)).append(suffix)
+                        .append("\" class=\"").append(cssClass).append("\">");
                 html.append(escapeHtml(name)).append(suffix).append("</a>\n");
             }
         }
@@ -198,7 +211,7 @@ public class ResponseBuilder {
                 .replace("\"", "&quot;");
     }
 
-   private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
+    private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
         System.out.println("Handling POST request for: " + targetFile.getPath());
 
         File uploadDir = new File(route.getRoot());
@@ -220,27 +233,29 @@ public class ResponseBuilder {
             if (isMultipart) {
                 String tempFilePath = request.getHeader("Temp-File-Path");
 
-               if (tempFilePath != null) {
+                if (tempFilePath != null) {
                     System.out.println("📦 Handling LARGE files via Disk Scanner...");
-                    
-                    List<String> uploadedNames = MultipartHandler.extractUploadedFiles(request, uploadDir.getAbsolutePath());
-                    System.out.println(uploadedNames + "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+
+                    List<String> uploadedNames = MultipartHandler.extractUploadedFiles(request,
+                            uploadDir.getAbsolutePath());
 
                     if (!uploadedNames.isEmpty()) {
-                        String responseMessage = "Large File(s) uploaded successfully: " + String.join(", ", uploadedNames);
-                        
+                        String responseMessage = "Large File(s) uploaded successfully: "
+                                + String.join(", ", uploadedNames);
+
                         HttpResponse response = new HttpResponse();
                         response.setStatusCode(201, "Created");
                         response.setHeader("Content-Type", "text/plain; charset=UTF-8");
                         response.setBody(responseMessage.getBytes());
                         return response;
                     } else {
-                        return buildErrorResponse(400, "Bad Request - Upload extraction failed or no files found", route.getErrorPages());
+                        return buildErrorResponse(400, "Bad Request - Upload extraction failed or no files found",
+                                route.getErrorPages());
                     }
 
                 } else {
-                    System.out.println("📄 Handling SMALL file via RAM...");
-                    
+                    System.out.println("Handling SMALL file via RAM...");
+
                     request.parseMultipartBody();
                     Map<String, byte[]> uploadedFiles = request.getUploadedFiles();
 
@@ -255,7 +270,7 @@ public class ResponseBuilder {
                         byte[] fileContent = entry.getValue();
 
                         String safeName = new File(filename).getName();
-                        
+
                         String uniqueName = java.util.UUID.randomUUID().toString() + "_" + safeName;
                         File outFile = new File(uploadDir, uniqueName);
 

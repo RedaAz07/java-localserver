@@ -229,11 +229,9 @@ public class Server {
                                 state.fileChannel.write(bodyPart);
                                 state.bytesWritten += bodyPartLength;
                             }
-                            state.buffer.reset(); // نخويو الـ RAM
+                            state.buffer.reset();
                         } else {
-                            // 🟢 الطلب صغير (<= 2MB): نخليوه فـ الـ RAM
                             state.useDisk = false;
-                            // ما كانديرو والو حيت الداتا ديجا راها فـ state.buffer !
                         }
                     }
                 } else {
@@ -245,14 +243,11 @@ public class Server {
                 }
             }
         } else {
-            // مرحلة قراءة باقي الـ Body
             if (!state.isError) {
                 if (state.useDisk && state.fileChannel != null) {
-                    // 🔴 كنكبو فالديسك
                     state.fileChannel.write(buffer);
                     state.bytesWritten += bytesRead;
                 } else if (!state.useDisk) {
-                    // 🟢 كنكملو نجمعو فـ الـ RAM
                     byte[] chunk = new byte[buffer.limit()];
                     buffer.get(chunk);
                     state.buffer.write(chunk);
@@ -284,7 +279,6 @@ public class Server {
                 response = ResponseBuilder.build(state.request, state.matchedRoute);
             }
 
-            // --- session handling ---
             if (state.request != null) {
                 state.session = Session.fromRequest(state.request);
                 if (state.session == null) {
@@ -350,7 +344,6 @@ public class Server {
         if (contentLengthStr != null) {
             long expectedBodySize = Long.parseLong(contentLengthStr);
 
-            // ⬅️ الحساب كيتبدل على حساب واش ديسك ولا RAM
             long currentBodySize = state.useDisk ? state.bytesWritten : (state.buffer.size() - state.headerLength);
 
             if (currentBodySize >= expectedBodySize) {

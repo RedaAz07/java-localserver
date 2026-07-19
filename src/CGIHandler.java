@@ -13,7 +13,6 @@ public class CGIHandler {
 
     private static final long TIMEOUT_SECONDS = 10;
 
- 
     private static final Map<String, String> INTERPRETERS = new HashMap<>();
     static {
         INTERPRETERS.put(".py", "python3");
@@ -45,7 +44,6 @@ public class CGIHandler {
         byte[] body = request.getBody();
         env.put("CONTENT_LENGTH", String.valueOf(body != null ? body.length : 0));
 
-        // Forward every request header as HTTP_<NAME> (CGI/1.1 convention).
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             String key = "HTTP_" + header.getKey().toUpperCase().replace('-', '_');
             env.put(key, header.getValue());

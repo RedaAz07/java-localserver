@@ -58,7 +58,6 @@ public class HttpRequest {
     }
 
     public String getHeader(String key) {
-        // Case-insensitive lookup (HTTP headers are case-insensitive)
         for (Map.Entry<String, String> entry : headers.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(key)) {
                 return entry.getValue();
@@ -82,9 +81,7 @@ public class HttpRequest {
     public Map<String, String> getFormFields() {
         return formFields;
     }
-    /**}
-     * Parse the "Cookie" request header into a list of Cookie objects.
-     */
+
     public List<Cookie> getCookies() {
         List<Cookie> cookies = new ArrayList<>();
         String cookieHeader = getHeader("Cookie");
@@ -103,9 +100,7 @@ public class HttpRequest {
         return cookies;
     }
 
-    /**
-     * Get a single cookie by name from the request, or null if not found.
-     */
+
     public Cookie getCookie(String name) {
         for (Cookie c : getCookies()) {
             if (c.getName().equals(name)) {

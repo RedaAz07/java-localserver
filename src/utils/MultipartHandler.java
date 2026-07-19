@@ -15,25 +15,28 @@ public class MultipartHandler {
 
     public static List<String> extractUploadedFiles(HttpRequest request, String destinationDirectory) {
         List<String> uploadedFiles = new ArrayList<>();
-        
+
         String tempFilePathStr = request.getHeader("Temp-File-Path");
-        if (tempFilePathStr == null) return uploadedFiles;
+        if (tempFilePathStr == null)
+            return uploadedFiles;
 
         Path tempFilePath = Paths.get(tempFilePathStr);
-        if (!Files.exists(tempFilePath)) return uploadedFiles;
+        if (!Files.exists(tempFilePath))
+            return uploadedFiles;
 
         String contentType = request.getHeader("Content-Type");
-        if (contentType == null || !contentType.contains("boundary=")) return uploadedFiles;
-        
+        if (contentType == null || !contentType.contains("boundary="))
+            return uploadedFiles;
+
         String boundaryStr = "--" + contentType.split("boundary=")[1];
         byte[] boundary = boundaryStr.getBytes();
         byte[] nextBoundary = ("\r\n" + boundaryStr).getBytes();
         byte[] doubleCrLf = "\r\n\r\n".getBytes();
 
         try (FileChannel sourceChannel = FileChannel.open(tempFilePath, StandardOpenOption.READ)) {
-            // قلب على أول Boundary
             long pos = findBytes(sourceChannel, boundary, 0);
-            if (pos == -1) return uploadedFiles;
+            if (pos == -1)
+                return uploadedFiles;
 
             pos += boundary.length;
 
@@ -41,15 +44,17 @@ public class MultipartHandler {
                 ByteBuffer checkBuf = ByteBuffer.allocate(2);
                 sourceChannel.position(pos);
                 int read = sourceChannel.read(checkBuf);
-                if (read < 2) break;
-                
+                if (read < 2)
+                    break;
+
                 if (checkBuf.array()[0] == '-' && checkBuf.array()[1] == '-') {
-                    break; 
+                    break;
                 }
                 pos += 2;
 
                 long headerEndPos = findBytes(sourceChannel, doubleCrLf, pos);
-                if (headerEndPos == -1) break;
+                if (headerEndPos == -1)
+                    break;
 
                 int headerSize = (int) (headerEndPos - pos);
                 ByteBuffer headerBuf = ByteBuffer.allocate(headerSize);
@@ -59,10 +64,11 @@ public class MultipartHandler {
 
                 String originalFileName = extractFilename(headers);
 
-                long dataStart = headerEndPos + 4; 
+                long dataStart = headerEndPos + 4;
 
                 long nextBoundPos = findBytes(sourceChannel, nextBoundary, dataStart);
-                if (nextBoundPos == -1) break;
+                if (nextBoundPos == -1)
+                    break;
 
                 long dataSize = nextBoundPos - dataStart;
 
@@ -70,25 +76,26 @@ public class MultipartHandler {
                     String uniqueFileName = UUID.randomUUID().toString() + "_" + originalFileName;
                     Path finalPath = Paths.get(destinationDirectory, uniqueFileName);
 
-                    try (FileChannel destChannel = FileChannel.open(finalPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                    try (FileChannel destChannel = FileChannel.open(finalPath, StandardOpenOption.CREATE,
+                            StandardOpenOption.WRITE)) {
                         long remaining = dataSize;
                         long currentPos = dataStart;
-                       
+
                         while (remaining > 0) {
                             long transferred = sourceChannel.transferTo(currentPos, remaining, destChannel);
                             currentPos += transferred;
                             remaining -= transferred;
                         }
                     }
-                    System.out.println("✅ Saved large file: " + uniqueFileName);
-                    uploadedFiles.add(uniqueFileName); 
+                    System.out.println("Saved large file: " + uniqueFileName);
+                    uploadedFiles.add(uniqueFileName);
                 }
 
-                pos = nextBoundPos + nextBoundary.length; 
+                pos = nextBoundPos + nextBoundary.length;
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Upload Extraction Failed: " + e.getMessage());
+            System.err.println("Upload Extraction Failed: " + e.getMessage());
         }
 
         return uploadedFiles;
@@ -110,7 +117,8 @@ public class MultipartHandler {
         while (true) {
             channel.position(pos);
             int bytesRead = channel.read(buffer);
-            if (bytesRead < pattern.length) return -1;
+            if (bytesRead < pattern.length)
+                return -1;
 
             byte[] array = buffer.array();
             for (int i = 0; i <= bytesRead - pattern.length; i++) {
@@ -121,9 +129,11 @@ public class MultipartHandler {
                         break;
                     }
                 }
-                if (match) return pos + i;
+                if (match)
+                    return pos + i;
             }
-            if (bytesRead < bufferSize) return -1;
+            if (bytesRead < bufferSize)
+                return -1;
             pos += (bytesRead - overlap);
             buffer.clear();
         }
