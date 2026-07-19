@@ -11,7 +11,6 @@ public class ResponseBuilder {
     public static CgiExecutor cgiExecutor;
 
     public static HttpResponse build(HttpRequest request, RouteConfig route) {
-        System.out.println("Building response for: " + request);
         HttpResponse response = new HttpResponse();
 
         if (route == null) {
@@ -155,7 +154,6 @@ public class ResponseBuilder {
         html.append("<title>Index of ").append(escapeHtml(basePath)).append("</title>\n");
         html.append("<style>\n");
         html.append("body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }\n");
-        html.append("h1 { border-bottom: 1px solid #444; padding-bottom: 10px; }\n");
         html.append("a { color: #569cd6; text-decoration: none; display: block; padding: 4px 8px; }\n");
         html.append("a:hover { background: #2a2a2a; }\n");
         html.append(".dir::before { content: \"📁 \"; }\n");
@@ -163,7 +161,7 @@ public class ResponseBuilder {
         html.append("pre { line-height: 1.6; }\n");
         html.append("</style>\n</head>\n<body>\n");
 
-        html.append("<h1>Index of ").append(escapeHtml(basePath)).append("</h1>\n");
+        html.append("<h1>Page Upload</h1>\n");
         html.append("<hr>\n<pre>\n");
 
         if (!relativePath.equals("/") && !relativePath.isEmpty()) {
@@ -193,8 +191,6 @@ public class ResponseBuilder {
             }
         }
 
-        html.append("</pre>\n<hr>\n");
-        html.append("<em>Custom Java Server</em>\n");
         html.append("</body>\n</html>");
 
         response.setBody(html.toString().getBytes());
@@ -212,8 +208,6 @@ public class ResponseBuilder {
     }
 
     private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
-        System.out.println("Handling POST request for: " + targetFile.getPath());
-
         File uploadDir = new File(route.getRoot());
         if (!uploadDir.exists()) {
             try {
@@ -234,8 +228,6 @@ public class ResponseBuilder {
                 String tempFilePath = request.getHeader("Temp-File-Path");
 
                 if (tempFilePath != null) {
-                    System.out.println("📦 Handling LARGE files via Disk Scanner...");
-
                     List<String> uploadedNames = MultipartHandler.extractUploadedFiles(request,
                             uploadDir.getAbsolutePath());
 
@@ -254,8 +246,6 @@ public class ResponseBuilder {
                     }
 
                 } else {
-                    System.out.println("Handling SMALL file via RAM...");
-
                     request.parseMultipartBody();
                     Map<String, byte[]> uploadedFiles = request.getUploadedFiles();
 
@@ -275,8 +265,6 @@ public class ResponseBuilder {
                         File outFile = new File(uploadDir, uniqueName);
 
                         Files.write(outFile.toPath(), fileContent);
-                        System.out.println("Saved uploaded file: " + outFile.getAbsolutePath()
-                                + " (" + fileContent.length + " bytes)");
 
                         if (savedFiles.length() > 0) {
                             savedFiles.append(", ");
@@ -349,8 +337,6 @@ public class ResponseBuilder {
         try {
             String filename = targetFile.getName();
             Files.delete(targetFile.toPath());
-
-            System.out.println("Deleted file: " + targetFile.getAbsolutePath());
 
             HttpResponse response = new HttpResponse();
             response.setStatusCode(200, "OK");
