@@ -35,28 +35,32 @@ public class Server {
     public void start() throws IOException {
         this.selector = Selector.open();
 
+        java.util.Set<String> boundAddresses = new java.util.HashSet<>();
+
         for (ServerConfig config : serverConfigs) {
-            this.routeConfigs.addAll(config.getRoutes());
             String host = config.getHost();
 
             for (int port : config.getPorts()) {
+                String bindKey = host + ":" + port;
+
+                if (boundAddresses.contains(bindKey)) {
+                    continue;
+                }
+
                 try {
                     ServerSocketChannel serverChannel = ServerSocketChannel.open();
-
                     serverChannel.configureBlocking(false);
                     serverChannel.bind(new InetSocketAddress(host, port));
-
                     serverChannel.register(selector, SelectionKey.OP_ACCEPT);
-
+                    boundAddresses.add(bindKey);
                     System.out.println("Started virtual server on " + host + ":" + port);
                 } catch (Exception e) {
                     System.err
                             .println("Failed to start virtual server on " + host + ":" + port + " - " + e.getMessage());
-                    continue;
                 }
             }
         }
-        System.out.println("All ports bound. Entering the event loop...");
+        System.out.println("All unique ports bound. Entering the event loop...");
         runEventLoop();
     }
 
@@ -185,7 +189,6 @@ public class Server {
         buffer.flip();
 
         if (!state.isHeadersParsed) {
-            // باقين فـ مرحلة الـ Headers، كنقراو للميموار باش نقلبو على \r\n\r\n
             byte[] chunk = new byte[buffer.limit()];
             buffer.get(chunk);
             state.buffer.write(chunk);
@@ -200,11 +203,13 @@ public class Server {
                 if (parsedReq != null) {
                     state.request = parsedReq;
                     state.isHeadersParsed = true;
-                    state.matchedRoute = Router.matchRoute(state.request.getPath(), routeConfigs);
+                    int localPort = ((SocketChannel) key.channel()).socket().getLocalPort();
+                    String hostHeader = state.request.getHeader("Host");
+                    ServerConfig matchedServer = findMatchingServer(hostHeader, localPort);
+                    state.matchedRoute = Router.matchRoute(state.request.getPath(), matchedServer.getRoutes());
                     checkBodyLimit(state);
 
                     if (!state.isError) {
-                        // ⬅️ هنا كيبدا التفكير ديال الـ Hybrid ➡️
                         long contentLength = 0;
                         String clStr = state.request.getHeader("Content-Length");
                         if (clStr != null) {
@@ -214,7 +219,6 @@ public class Server {
                         int bodyPartLength = dataSoFar.length - headerEnd;
 
                         if (contentLength > MEMORY_THRESHOLD) {
-                            // 🔴 الطلب كبير (> 2MB): نخدمو بالديسك (Streaming)
                             state.useDisk = true;
                             java.nio.file.Path tempDir = java.nio.file.Paths.get("./temp_uploads");
                             if (!java.nio.file.Files.exists(tempDir)) {
@@ -273,7 +277,7 @@ public class Server {
                     if (allData.length > state.headerLength) {
                         byte[] completeBody = Arrays.copyOfRange(allData, state.headerLength, allData.length);
                         state.request.setBody(completeBody);
-                        state.request.parseMultipartBody(); 
+                        state.request.parseMultipartBody();
                     }
                 }
                 response = ResponseBuilder.build(state.request, state.matchedRoute);
@@ -373,4 +377,32 @@ public class Server {
         }
     }
 
+    private ServerConfig findMatchingServer(String hostHeader, int localPort) {
+        String requestedHost = hostHeader;
+        if (requestedHost != null && requestedHost.contains(":")) {
+            requestedHost = requestedHost.split(":")[0]; 
+        }
+
+        ServerConfig defaultServer = null;
+
+        for (ServerConfig config : serverConfigs) {
+            if (config.getPorts().contains(localPort)) {
+                
+                if (defaultServer == null) {
+                    defaultServer = config; 
+                }
+
+                String serverName = config.getServerName(); 
+                
+                if (requestedHost != null && serverName != null && requestedHost.equalsIgnoreCase(serverName)) {
+                    return config; 
+                }
+                
+                if (requestedHost != null && requestedHost.equalsIgnoreCase(config.getHost())) {
+                    return config;
+                }
+            }
+        }
+        return defaultServer;
+    }
 }
