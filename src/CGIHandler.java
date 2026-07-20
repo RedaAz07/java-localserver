@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import utils.HttpRequest;
 import utils.HttpResponse;
 
@@ -25,7 +24,12 @@ public class CGIHandler {
             throws Exception {
         String interpreter = interpreterFor(scriptFile.getName());
         if (interpreter == null) {
-            throw new IOException("No CGI interpreter configured for: " + scriptFile.getName());
+            System.err.println("No CGI interpreter configured for: " + scriptFile.getName());
+            HttpResponse notFound = new HttpResponse();
+            notFound.setStatusCode(404, "Not Found");
+            notFound.setHeader("Content-Type", "text/html; charset=UTF-8");
+            notFound.setBody(("<html><body><center><h1>404 Not Found</h1></center></body></html>").getBytes());
+            return notFound;
         }
 
         ProcessBuilder builder = new ProcessBuilder(interpreter, scriptFile.getAbsolutePath());
@@ -52,7 +56,7 @@ public class CGIHandler {
         if (tempFilePathHeader != null) {
             stdinSourceFile = new File(tempFilePathHeader);
             contentLength = stdinSourceFile.exists() ? stdinSourceFile.length() : 0;
-            ownsStdinFile = false; 
+            ownsStdinFile = false;
         } else {
             byte[] body = request.getBody();
             stdinSourceFile = File.createTempFile("cgi-stdin-", ".tmp");
@@ -78,16 +82,8 @@ public class CGIHandler {
         try {
             process = builder.start();
 
-            InputStream in = process.getInputStream();
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buf = new byte[4096];
-            int n;
-            while ((n = in.read(buf)) != -1) {
-                out.write(buf, 0, n);
-            }
-
-            boolean finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            if (!finished) {
+            byte[] outputBytes = readWithDeadline(process, process.getInputStream(), TIMEOUT_SECONDS * 1000L);
+            if (outputBytes == null) {
                 process.destroyForcibly();
                 throw new IOException(
                         "CGI script timed out after " + TIMEOUT_SECONDS + "s: " + scriptFile.getPath());
@@ -100,7 +96,7 @@ public class CGIHandler {
                 throw new IOException("CGI script exited with code " + exitCode + ": " + scriptFile.getPath());
             }
 
-            return parseCgiOutput(out.toByteArray());
+            return parseCgiOutput(outputBytes);
 
         } finally {
             if (process != null && process.isAlive()) {
@@ -110,6 +106,45 @@ public class CGIHandler {
                 stdinSourceFile.delete();
             }
         }
+    }
+
+    private static byte[] readWithDeadline(Process process, InputStream in, long timeoutMillis) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+
+        while (true) {
+            if (System.currentTimeMillis() > deadline) {
+                return null;
+            }
+
+            int available = in.available();
+            if (available > 0) {
+                int n = in.read(buf, 0, Math.min(available, buf.length));
+                if (n == -1) {
+                    break;
+                }
+                out.write(buf, 0, n);
+                continue;
+            }
+
+            if (!process.isAlive()) {
+                int n;
+                while ((n = in.read(buf)) != -1) {
+                    out.write(buf, 0, n);
+                }
+                break;
+            }
+
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+
+        return out.toByteArray();
     }
 
     private static String interpreterFor(String fileName) {

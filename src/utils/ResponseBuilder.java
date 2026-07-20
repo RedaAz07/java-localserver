@@ -56,6 +56,9 @@ public class ResponseBuilder {
         }
 
         if (isCgiRequest(route, targetFile)) {
+            if (!"GET".equals(request.getMethod())) {
+                return buildErrorResponse(405, "Method Not Allowed", route.getErrorPages());
+            }
             try {
                 return cgiExecutor.handle(request, targetFile, fullPath, queryString);
             } catch (Exception e) {
