@@ -3,11 +3,10 @@ package utils;
 import java.util.Arrays;
 
 public class RequestParser {
-    public static HttpRequest parseRequest(byte[] request) {
+    public static HttpRequest parseRequest(byte[] request, int headerEndIndex) {
         if (request == null || request.length < 4) {
             return null;
         }
-        int headerEndIndex = findHeaderEndIndex(request);
         if (headerEndIndex == -1) {
             return null;
         }
@@ -18,12 +17,6 @@ public class RequestParser {
         boolean isValide = parseHeader(headerString, httpRequest);
         if (!isValide) {
             return null;
-        }
-
-        int bodyStartIndex = headerEndIndex;
-        if (bodyStartIndex < request.length) {
-            byte[] bodyBytes = Arrays.copyOfRange(request, bodyStartIndex, request.length);
-            httpRequest.setBody(bodyBytes);
         }
 
         return httpRequest;

@@ -51,7 +51,7 @@
     },
     {
       "host": "127.0.0.1",
-      "ports": [8081, 8082],
+      "ports": [8080, 8082],
       "server_name": "jjjjj",
       "error_pages": {
         "400": "error_pages/400.html",
@@ -66,7 +66,7 @@
         {
           "path": "/",
           "root": "www",
-          "default_file": "index.html",
+          "default_file": "",
           "methods": ["GET"],
           "directory_listing": false
         },

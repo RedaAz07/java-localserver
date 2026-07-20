@@ -217,7 +217,7 @@ public class ConfigLoader {
             String host = (String) serverMap.get("host");
 
             Number limitNum = (Number) serverMap.get("client_body_limit");
-            Long clientBodyLimit = limitNum != null ? limitNum.longValue() : 1048576L;
+            Long clientBodyLimit = limitNum != null ? limitNum.longValue() : 5242880;
 
             List<Object> rawPorts = (List<Object>) serverMap.get("ports");
             List<Integer> ports = new ArrayList<>();

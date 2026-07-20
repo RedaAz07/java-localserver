@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import utils.ClientState;
+import utils.ClientState.ChunkState;
 import utils.HttpRequest;
 import utils.HttpResponse;
 import utils.RequestParser;
@@ -20,12 +21,13 @@ import utils.ServerConfig;
 import utils.Session;
 
 public class Server {
+
     private final List<ServerConfig> serverConfigs;
     private List<RouteConfig> routeConfigs;
     private Selector selector;
-    private static final long MEMORY_THRESHOLD = 2 * 1024 * 1024;
-    private static final int Reqlimit = 5242880; // 5MB
-    private static final long IDLE_TIMEOUT_MILLIS = 30000;
+    private static final long MEMORY_THRESHOLD = 5 * 1024 * 1024;
+    private static final int Reqlimit = 5 * 1024 * 1024; // 5MB
+    private static final long IDLE_TIMEOUT_MILLIS = 3000000;
 
     public Server(List<ServerConfig> serverConfigs) {
         this.serverConfigs = serverConfigs;
@@ -198,7 +200,7 @@ public class Server {
 
             if (headerEnd != -1) {
                 state.headerLength = headerEnd;
-                HttpRequest parsedReq = RequestParser.parseRequest(dataSoFar);
+                HttpRequest parsedReq = RequestParser.parseRequest(dataSoFar, headerEnd);
 
                 if (parsedReq != null) {
                     state.request = parsedReq;
@@ -207,35 +209,53 @@ public class Server {
                     String hostHeader = state.request.getHeader("Host");
                     ServerConfig matchedServer = findMatchingServer(hostHeader, localPort);
                     state.matchedRoute = Router.matchRoute(state.request.getPath(), matchedServer.getRoutes());
+
+                    String transferEncoding = state.request.getHeader("Transfer-Encoding");
+                    if ("chunked".equalsIgnoreCase(transferEncoding)) {
+                        state.isChunked = true;
+                        state.useDisk = true;
+                    }
                     checkBodyLimit(state);
 
                     if (!state.isError) {
-                        long contentLength = 0;
-                        String clStr = state.request.getHeader("Content-Length");
-                        if (clStr != null) {
-                            contentLength = Long.parseLong(clStr);
-                        }
-
                         int bodyPartLength = dataSoFar.length - headerEnd;
+                        ByteBuffer leftoverBuffer = ByteBuffer.wrap(dataSoFar, headerEnd, bodyPartLength);
 
-                        if (contentLength > MEMORY_THRESHOLD) {
-                            state.useDisk = true;
+                        if (state.isChunked) {
                             java.nio.file.Path tempDir = java.nio.file.Paths.get("./temp_uploads");
-                            if (!java.nio.file.Files.exists(tempDir)) {
+                            if (!java.nio.file.Files.exists(tempDir))
                                 java.nio.file.Files.createDirectories(tempDir);
-                            }
-                            state.tempFilePath = java.nio.file.Files.createTempFile(tempDir, "upload_", ".tmp");
+                            state.tempFilePath = java.nio.file.Files.createTempFile(tempDir, "upload_chunked_", ".tmp");
                             state.fileChannel = java.nio.channels.FileChannel.open(state.tempFilePath,
                                     java.nio.file.StandardOpenOption.WRITE);
 
-                            if (bodyPartLength > 0) {
-                                ByteBuffer bodyPart = ByteBuffer.wrap(dataSoFar, headerEnd, bodyPartLength);
-                                state.fileChannel.write(bodyPart);
-                                state.bytesWritten += bodyPartLength;
-                            }
+                            processChunkedBody(state, leftoverBuffer);
                             state.buffer.reset();
+
                         } else {
-                            state.useDisk = false;
+                            long contentLength = 0;
+                            String clStr = state.request.getHeader("Content-Length");
+                            if (clStr != null) {
+                                contentLength = Long.parseLong(clStr);
+                            }
+
+                            if (contentLength > MEMORY_THRESHOLD) {
+                                state.useDisk = true;
+                                java.nio.file.Path tempDir = java.nio.file.Paths.get("./temp_uploads");
+                                if (!java.nio.file.Files.exists(tempDir))
+                                    java.nio.file.Files.createDirectories(tempDir);
+                                state.tempFilePath = java.nio.file.Files.createTempFile(tempDir, "upload_", ".tmp");
+                                state.fileChannel = java.nio.channels.FileChannel.open(state.tempFilePath,
+                                        java.nio.file.StandardOpenOption.WRITE);
+
+                                if (leftoverBuffer.hasRemaining()) {
+                                    state.fileChannel.write(leftoverBuffer);
+                                    state.bytesWritten += bodyPartLength;
+                                }
+                                state.buffer.reset();
+                            } else {
+                                state.useDisk = false;
+                            }
                         }
                     }
                 } else {
@@ -247,8 +267,11 @@ public class Server {
                 }
             }
         } else {
+
             if (!state.isError) {
-                if (state.useDisk && state.fileChannel != null) {
+                if (state.isChunked) {
+                    processChunkedBody(state, buffer);
+                } else if (state.useDisk && state.fileChannel != null) {
                     state.fileChannel.write(buffer);
                     state.bytesWritten += bytesRead;
                 } else if (!state.useDisk) {
@@ -264,6 +287,7 @@ public class Server {
         }
 
         if (state.isRequestComplete) {
+
             HttpResponse response;
 
             if (state.isError) {
@@ -307,7 +331,6 @@ public class Server {
             state.lastActivityMillis = System.currentTimeMillis();
 
             if (!state.responseBuffer.hasRemaining()) {
-
                 if (state.tempFilePath != null) {
                     try {
                         java.nio.file.Files.deleteIfExists(state.tempFilePath);
@@ -315,8 +338,13 @@ public class Server {
                     }
                 }
 
-                key.attach(new ClientState());
-                key.interestOps(SelectionKey.OP_READ);
+                if (state.isError) {
+                    key.cancel();
+                    client.close();
+                } else {
+                    key.attach(new ClientState());
+                    key.interestOps(SelectionKey.OP_READ);
+                }
             }
         }
     }
@@ -344,32 +372,24 @@ public class Server {
         if (state.isError)
             return;
 
+        if (state.isChunked) {
+            return;
+        }
+
         String contentLengthStr = state.request.getHeader("Content-Length");
         if (contentLengthStr != null) {
             long expectedBodySize = Long.parseLong(contentLengthStr);
-
             long currentBodySize = state.useDisk ? state.bytesWritten : (state.buffer.size() - state.headerLength);
 
             if (currentBodySize >= expectedBodySize) {
                 state.isRequestComplete = true;
-
                 if (state.useDisk) {
                     try {
                         if (state.fileChannel != null) {
                             state.fileChannel.close();
                         }
                     } catch (IOException e) {
-                        e.printStackTrace();
                     }
-                }
-            }
-        } else if ("chunked".equals(state.request.getHeader("Transfer-Encoding"))) {
-            state.isRequestComplete = true;
-            if (state.useDisk) {
-                try {
-                    if (state.fileChannel != null)
-                        state.fileChannel.close();
-                } catch (IOException e) {
                 }
             }
         } else {
@@ -380,29 +400,115 @@ public class Server {
     private ServerConfig findMatchingServer(String hostHeader, int localPort) {
         String requestedHost = hostHeader;
         if (requestedHost != null && requestedHost.contains(":")) {
-            requestedHost = requestedHost.split(":")[0]; 
+            requestedHost = requestedHost.split(":")[0];
         }
 
         ServerConfig defaultServer = null;
 
         for (ServerConfig config : serverConfigs) {
             if (config.getPorts().contains(localPort)) {
-                
+
                 if (defaultServer == null) {
-                    defaultServer = config; 
+                    defaultServer = config;
                 }
 
-                String serverName = config.getServerName(); 
-                
+                String serverName = config.getServerName();
+
                 if (requestedHost != null && serverName != null && requestedHost.equalsIgnoreCase(serverName)) {
-                    return config; 
+                    return config;
                 }
-                
+
                 if (requestedHost != null && requestedHost.equalsIgnoreCase(config.getHost())) {
                     return config;
                 }
             }
         }
         return defaultServer;
+    }
+
+    private void processChunkedBody(ClientState state, ByteBuffer buffer) throws IOException {
+        while (buffer.hasRemaining() && state.chunkState != ChunkState.FINISHED && !state.isError) {
+            switch (state.chunkState) {
+
+                case READING_SIZE:
+                    byte b = buffer.get();
+                    state.chunkLineBuilder.write(b);
+                    byte[] lineBytes = state.chunkLineBuilder.toByteArray();
+
+                    if (lineBytes.length >= 2 && lineBytes[lineBytes.length - 2] == '\r'
+                            && lineBytes[lineBytes.length - 1] == '\n') {
+                        String sizeStr = new String(lineBytes, 0, lineBytes.length - 2).trim();
+                        if (sizeStr.contains(";")) {
+                            sizeStr = sizeStr.split(";")[0];
+                        }
+
+                        try {
+                            state.currentChunkSize = Integer.parseInt(sizeStr, 16);
+                        } catch (NumberFormatException e) {
+                            state.isError = true;
+                            state.errorCode = 400;
+                            return;
+                        }
+
+                        state.chunkLineBuilder.reset();
+
+                        if (state.currentChunkSize == 0) {
+                            state.chunkState = ChunkState.READING_CRLF;
+                        } else {
+                            state.chunkState = ChunkState.READING_DATA;
+                            state.chunkBytesRead = 0;
+                        }
+                    }
+                    break;
+
+                case READING_DATA:
+                    int bytesToRead = Math.min(buffer.remaining(), state.currentChunkSize - state.chunkBytesRead);
+
+                    int oldLimit = buffer.limit();
+                    buffer.limit(buffer.position() + bytesToRead);
+
+                    if (state.useDisk && state.fileChannel != null) {
+                        state.fileChannel.write(buffer);
+                    } else {
+                        byte[] chunkData = new byte[bytesToRead];
+                        buffer.get(chunkData);
+                        state.buffer.write(chunkData);
+                    }
+
+                    buffer.limit(oldLimit);
+
+                    state.chunkBytesRead += bytesToRead;
+                    state.bytesWritten += bytesToRead;
+
+                    if (state.chunkBytesRead == state.currentChunkSize) {
+                        state.chunkState = ChunkState.READING_CRLF;
+                    }
+                    break;
+
+                case READING_CRLF:
+                    byte c = buffer.get();
+                    state.chunkLineBuilder.write(c);
+                    byte[] crlfBytes = state.chunkLineBuilder.toByteArray();
+
+                    if (crlfBytes.length == 2) {
+                        if (crlfBytes[0] == '\r' && crlfBytes[1] == '\n') {
+                            state.chunkLineBuilder.reset();
+                            if (state.currentChunkSize == 0) {
+                                state.chunkState = ChunkState.FINISHED;
+                                state.isRequestComplete = true;
+                                if (state.useDisk && state.fileChannel != null) {
+                                    state.fileChannel.close();
+                                }
+                            } else {
+                                state.chunkState = ChunkState.READING_SIZE;
+                            }
+                        } else {
+                            state.isError = true;
+                            state.errorCode = 400;
+                        }
+                    }
+                    break;
+            }
+        }
     }
 }
