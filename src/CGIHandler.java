@@ -19,6 +19,8 @@ public class CGIHandler {
         INTERPRETERS.put(".js", "node");
     }
 
+    private static final String TEMP_FILE_HEADER = "Temp-File-Path";
+
     public static HttpResponse handle(HttpRequest request, File scriptFile, String scriptPath, String queryString)
             throws Exception {
         String interpreter = interpreterFor(scriptFile.getName());
@@ -41,19 +43,36 @@ public class CGIHandler {
         if (contentType != null) {
             env.put("CONTENT_TYPE", contentType);
         }
-        byte[] body = request.getBody();
-        env.put("CONTENT_LENGTH", String.valueOf(body != null ? body.length : 0));
+
+        String tempFilePathHeader = request.getHeader(TEMP_FILE_HEADER);
+        File stdinSourceFile;
+        boolean ownsStdinFile;
+        long contentLength;
+
+        if (tempFilePathHeader != null) {
+            stdinSourceFile = new File(tempFilePathHeader);
+            contentLength = stdinSourceFile.exists() ? stdinSourceFile.length() : 0;
+            ownsStdinFile = false; 
+        } else {
+            byte[] body = request.getBody();
+            stdinSourceFile = File.createTempFile("cgi-stdin-", ".tmp");
+            if (body != null && body.length > 0) {
+                Files.write(stdinSourceFile.toPath(), body);
+            }
+            contentLength = body != null ? body.length : 0;
+            ownsStdinFile = true;
+        }
+        env.put("CONTENT_LENGTH", String.valueOf(contentLength));
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
+            if (header.getKey().equalsIgnoreCase(TEMP_FILE_HEADER)) {
+                continue;
+            }
             String key = "HTTP_" + header.getKey().toUpperCase().replace('-', '_');
             env.put(key, header.getValue());
         }
 
-        File stdinFile = File.createTempFile("cgi-stdin-", ".tmp");
-        if (body != null && body.length > 0) {
-            Files.write(stdinFile.toPath(), body);
-        }
-        builder.redirectInput(stdinFile);
+        builder.redirectInput(stdinSourceFile);
 
         Process process = null;
         try {
@@ -87,7 +106,9 @@ public class CGIHandler {
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
             }
-            stdinFile.delete();
+            if (ownsStdinFile) {
+                stdinSourceFile.delete();
+            }
         }
     }
 
