@@ -261,11 +261,15 @@ public class Server {
 
                         if (contentLength > MEMORY_THRESHOLD) {
                             state.useDisk = true;
-                            java.nio.file.Path tempDir = java.nio.file.Paths.get("./temp_uploads");
+                            String routeRoot = state.matchedRoute != null
+                                    ? state.matchedRoute.getRoot()
+                                    : "./temp_uploads";
+                            java.nio.file.Path tempDir = java.nio.file.Paths.get(routeRoot);
                             if (!java.nio.file.Files.exists(tempDir)) {
                                 java.nio.file.Files.createDirectories(tempDir);
                             }
-                            state.tempFilePath = java.nio.file.Files.createTempFile(tempDir, "upload_", ".tmp");
+                            state.tempFilePath = java.nio.file.Files.createTempFile(
+                                    tempDir, ".upload_", ".tmp");
                             state.fileChannel = java.nio.channels.FileChannel.open(state.tempFilePath,
                                     java.nio.file.StandardOpenOption.WRITE);
 

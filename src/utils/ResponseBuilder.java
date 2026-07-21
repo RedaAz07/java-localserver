@@ -58,6 +58,12 @@ public class ResponseBuilder {
             if (!"GET".equals(request.getMethod())) {
                 return buildErrorResponse(405, "Method Not Allowed", route.getErrorPages());
             }
+            byte[] body = request.getBody();
+            String tempPath = request.getHeader("Temp-File-Path");
+            if ((body != null && body.length > 0) || tempPath != null) {
+                return buildErrorResponse(400, "Bad Request - GET requests must not carry a body",
+                        route.getErrorPages());
+            }
             return null;
         }
 
@@ -369,23 +375,9 @@ public class ResponseBuilder {
                 String tempFilePathHeader = request.getHeader("Temp-File-Path");
                 if (tempFilePathHeader != null) {
                     java.nio.file.Path src = java.nio.file.Paths.get(tempFilePathHeader);
-                    java.nio.file.Path dst = targetFile.toPath();
-                    java.nio.file.Path sameDir = dst.getParent();
-                    java.nio.file.Path localTemp = null;
-                    try {
-                        localTemp = Files.createTempFile(sameDir, ".upload_", ".tmp");
-                        Files.move(src, localTemp,
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        Files.move(localTemp, dst,
-                                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    } catch (IOException e) {
-                        // If anything went wrong, clean up the intermediate temp
-                        if (localTemp != null) {
-                            try { Files.deleteIfExists(localTemp); } catch (IOException ignored) {}
-                        }
-                        throw e;
-                    }
+                    Files.move(src, targetFile.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 } else {
                     byte[] body = request.getBody();
                     if (body == null) {
