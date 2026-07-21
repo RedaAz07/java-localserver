@@ -70,7 +70,8 @@ public class Server {
 
         while (true) {
 
-            selector.select(20);
+            long selectTimeout = pendingCgiJobs.isEmpty() ? 1000 : 20;
+            selector.select(selectTimeout);
 
             closeIdleConnections(selector);
             pollPendingCgiJobs();
@@ -130,7 +131,6 @@ public class Server {
             try {
                 HttpResponse response = CGIHandler.pollCgi(cgiState);
                 if (response != null) {
-                    // Job finished or timed out -- build the response and re-arm
                     ClientState clientState = cgiState.clientState;
                     SelectionKey key = cgiState.key;
 
@@ -155,6 +155,23 @@ public class Server {
                 }
             } catch (Exception e) {
                 System.err.println("CGI poll error: " + e.getMessage());
+                ClientState clientState = cgiState.clientState;
+                SelectionKey key = cgiState.key;
+                try {
+                    HttpResponse err = CGIHandler.buildErrorResponse(500, "Internal Server Error");
+                    if (clientState.request != null) {
+                        clientState.session = Session.fromRequest(clientState.request);
+                        if (clientState.session == null) clientState.session = Session.create();
+                        err.addSetCookie(clientState.session.toCookie());
+                    }
+                    clientState.responseBuffer = err.toByteBuffer();
+                    clientState.cgiPending = false;
+                    if (key.isValid()) {
+                        key.interestOps(SelectionKey.OP_WRITE);
+                        selector.wakeup();
+                    }
+                } catch (Exception ignored) {
+                }
                 it.remove();
             }
         }
@@ -332,14 +349,13 @@ public class Server {
                         CgiState cgiState = CGIHandler.startCgi(
                                 state.request, scriptFile, scriptPath, queryString, key, state);
                         if (cgiState == null) {
-                            // No interpreter configured for this extension -- 404
                             response = ResponseBuilder.buildErrorResponse(404, "Not Found",
                                     state.matchedRoute.getErrorPages());
                         } else {
                             state.cgiPending = true;
-                            key.interestOps(0); // park -- Selector ignores this socket until re-armed
+                            key.interestOps(0);
                             pendingCgiJobs.add(cgiState);
-                            return; // no response yet, come back when pollCgi() finishes the job
+                            return;
                         }
                     } catch (IOException e) {
                         response = ResponseBuilder.buildErrorResponse(500, "Internal Server Error",
@@ -441,4 +457,5 @@ public class Server {
             state.isRequestComplete = true;
         }
     }
+
 }

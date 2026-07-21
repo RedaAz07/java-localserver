@@ -18,6 +18,7 @@ public class CgiState {
     public final ClientState clientState;
     public final File stdinSourceFile;
     public final boolean ownsStdinFile;
+    public int deadTicks = 0;
 
     public CgiState(Process process, InputStream stdout, long deadlineMillis,
             SelectionKey key, ClientState clientState,

@@ -15,13 +15,15 @@ public class CGIHandler {
 
     static final long TIMEOUT_MILLIS = 10_000L;
 
+    private static final int DEAD_TICKS_THRESHOLD = 5;
+
     private static final Map<String, String> INTERPRETERS = new HashMap<>();
     static {
         INTERPRETERS.put(".py", "python3");
         INTERPRETERS.put(".js", "node");
     }
-    private static final String TEMP_FILE_HEADER = "Temp-File-Path";
 
+    private static final String TEMP_FILE_HEADER = "Temp-File-Path";
 
     public static CgiState startCgi(HttpRequest request, File scriptFile,
             String scriptPath, String queryString,
@@ -84,6 +86,7 @@ public class CGIHandler {
         return new CgiState(process, process.getInputStream(), deadline,
                 key, clientState, stdinSourceFile, ownsStdinFile);
     }
+
     public static HttpResponse pollCgi(CgiState state) throws IOException {
         InputStream in = state.stdout;
         byte[] buf = new byte[4096];
@@ -101,15 +104,24 @@ public class CGIHandler {
             if (n > 0) {
                 state.outputBuffer.write(buf, 0, n);
             }
-            return null; // more to come, check back next tick
+            return null;
         }
 
         if (!state.process.isAlive()) {
-            int n;
-            while ((n = in.read(buf)) != -1) {
-                state.outputBuffer.write(buf, 0, n);
+            int remaining = in.available();
+            if (remaining > 0) {
+                int n = in.read(buf, 0, Math.min(remaining, buf.length));
+                if (n > 0) state.outputBuffer.write(buf, 0, n);
+                state.deadTicks = 0; // reset -- data is still flowing
+                return null;
             }
 
+            state.deadTicks++;
+            if (state.deadTicks < DEAD_TICKS_THRESHOLD) {
+                return null;
+            }
+
+            // Threshold reached -- finalize.
             int exitCode = state.process.exitValue();
             cleanup(state);
 
@@ -130,7 +142,7 @@ public class CGIHandler {
         }
     }
 
-    private static HttpResponse buildErrorResponse(int code, String message) {
+    public static HttpResponse buildErrorResponse(int code, String message) {
         HttpResponse response = new HttpResponse();
         response.setStatusCode(code, message);
         response.setHeader("Content-Type", "text/html; charset=UTF-8");
