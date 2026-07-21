@@ -39,7 +39,7 @@
           "path": "/cgi",
           "root": "cgi",
           "methods": ["GET", "POST", "DELETE"],
-          "cgi_extensions": [".py"],
+          "cgi_extensions": [".py", ".js"],
           "client_body_limit": 21474836480
         },
         {
