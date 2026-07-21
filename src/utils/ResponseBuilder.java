@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 public class ResponseBuilder {
-
     private static final long FILE_STREAM_THRESHOLD = 2 * 1024 * 1024; // 2MB
 
     public static HttpResponse build(HttpRequest request, RouteConfig route) {
@@ -370,13 +369,22 @@ public class ResponseBuilder {
                 String tempFilePathHeader = request.getHeader("Temp-File-Path");
                 if (tempFilePathHeader != null) {
                     java.nio.file.Path src = java.nio.file.Paths.get(tempFilePathHeader);
+                    java.nio.file.Path dst = targetFile.toPath();
+                    java.nio.file.Path sameDir = dst.getParent();
+                    java.nio.file.Path localTemp = null;
                     try {
-                        Files.move(src, targetFile.toPath(),
+                        localTemp = Files.createTempFile(sameDir, ".upload_", ".tmp");
+                        Files.move(src, localTemp,
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        Files.move(localTemp, dst,
                                 java.nio.file.StandardCopyOption.ATOMIC_MOVE,
                                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                     } catch (IOException e) {
-                        Files.move(src, targetFile.toPath(),
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        // If anything went wrong, clean up the intermediate temp
+                        if (localTemp != null) {
+                            try { Files.deleteIfExists(localTemp); } catch (IOException ignored) {}
+                        }
+                        throw e;
                     }
                 } else {
                     byte[] body = request.getBody();
