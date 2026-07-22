@@ -18,13 +18,11 @@ import utils.HttpRequest;
 import utils.HttpResponse;
 import utils.RequestParser;
 import utils.ResponseBuilder;
-import utils.RouteConfig;
 import utils.ServerConfig;
 import utils.Session;
 
 public class Server {
     private final List<ServerConfig> serverConfigs;
-    private List<RouteConfig> routeConfigs;
     private Selector selector;
     private static final long MEMORY_THRESHOLD = 2 * 1024 * 1024;
     private static final int Reqlimit = 5242880; // 5MB
@@ -34,7 +32,6 @@ public class Server {
 
     public Server(List<ServerConfig> serverConfigs) {
         this.serverConfigs = serverConfigs;
-        this.routeConfigs = new java.util.ArrayList<>();
     }
 
     public void start() throws IOException {
@@ -42,7 +39,6 @@ public class Server {
         java.util.Set<String> boundAddresses = new java.util.HashSet<>();
 
         for (ServerConfig config : serverConfigs) {
-            // this.routeConfigs.addAll(config.getRoutes());
             String host = config.getHost();
 
             for (int port : config.getPorts()) {

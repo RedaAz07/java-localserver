@@ -29,10 +29,8 @@ public class ResponseBuilder {
         }
 
         String fullPath = request.getPath();
-        String queryString = "";
         int qIdx = fullPath.indexOf('?');
         if (qIdx != -1) {
-            queryString = fullPath.substring(qIdx + 1);
             fullPath = fullPath.substring(0, qIdx);
         }
 
@@ -171,26 +169,32 @@ public class ResponseBuilder {
     }
 
     public static boolean isCgiFile(File targetFile, RouteConfig route) {
-        if (route.getCgiExtensions() == null || route.getCgiExtensions().isEmpty()) return false;
-        if (!targetFile.isFile()) return false;
+        if (route.getCgiExtensions() == null || route.getCgiExtensions().isEmpty())
+            return false;
+        if (!targetFile.isFile())
+            return false;
         String name = targetFile.getName();
         int dot = name.lastIndexOf('.');
-        if (dot == -1) return false;
+        if (dot == -1)
+            return false;
         return route.getCgiExtensions().contains(name.substring(dot));
     }
 
     public static File resolveServeFile(HttpRequest request, RouteConfig route) {
         String fullPath = request.getPath();
         int qIdx = fullPath.indexOf('?');
-        if (qIdx != -1) fullPath = fullPath.substring(0, qIdx);
+        if (qIdx != -1)
+            fullPath = fullPath.substring(0, qIdx);
         String relativePath = fullPath.substring(route.getPath().length());
-        if (!relativePath.startsWith("/")) relativePath = "/" + relativePath;
+        if (!relativePath.startsWith("/"))
+            relativePath = "/" + relativePath;
 
         File targetFile = new File(route.getRoot() + relativePath);
         try {
             File rootDir = new File(route.getRoot()).getCanonicalFile();
             File resolved = targetFile.getCanonicalFile();
-            if (!resolved.getPath().startsWith(rootDir.getPath())) return null;
+            if (!resolved.getPath().startsWith(rootDir.getPath()))
+                return null;
             // Handle default file for directories
             if (resolved.isDirectory() && route.getDefaultFile() != null) {
                 File defaultFile = new File(resolved, route.getDefaultFile());
@@ -287,6 +291,10 @@ public class ResponseBuilder {
     }
 
     private static HttpResponse handlePost(HttpRequest request, RouteConfig route, File targetFile) {
+        if(!route.getPath().equals("/upload")) {
+            return buildErrorResponse(400, "Uploads are only allowed on the /upload endpoint",
+                    route.getErrorPages());
+        }
         File uploadDir = new File(route.getRoot());
         if (!uploadDir.exists()) {
             try {
